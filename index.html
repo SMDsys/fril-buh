@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Фрил-Бух — учёт часов и оплат</title>
+  <meta name="description" content="Простая бухгалтерия для фрилансера: клиенты, почасовка, оплаты и долги. Данные хранятся на устройстве." />
+  <meta name="theme-color" content="#f4f6f5" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Фрил-Бух" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <script>
+    /* Тема до отрисовки, чтобы не было вспышки. */
+    (function () {
+      try {
+        var saved = localStorage.getItem('frilbuh.theme') || 'auto';
+        var dark = saved === 'dark' || (saved === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        document.documentElement.dataset.themeMode = saved;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = dark ? '#0d1211' : '#f4f6f5';
+        if (localStorage.getItem('frilbuh.pin.on') === '1') {
+          document.documentElement.dataset.lockPending = '1';
+        }
+      } catch (e) { /* светлая по умолчанию */ }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="offline-bar" id="offlineBar" role="status" aria-live="polite" hidden>Нет сети — данные сохраняются на устройстве</div>
+<div class="update-bar" id="updateBar" role="status" aria-live="polite" hidden>
+  <span>Доступна новая версия</span>
+  <button type="button" id="updateBtn">Обновить</button>
+</div>
+
+<div class="app" id="app">
+  <header class="topbar">
+    <a class="brand" href="#" data-view-jump="overview" aria-label="Фрил-Бух — на главную">
+      <img class="brand-logo" src="icons/icon.svg" alt="" width="44" height="44" />
+      <span class="brand-text">
+        <strong>Фрил-Бух</strong>
+        <span>учёт часов и оплат</span>
+      </span>
+    </a>
+
+    <nav class="tabs-desktop" aria-label="Разделы">
+      <button class="tab is-active" data-view="overview" type="button">Обзор</button>
+      <button class="tab" data-view="clients" type="button">Клиенты</button>
+      <button class="tab" data-view="works" type="button">Работы</button>
+      <button class="tab" data-view="money" type="button">Деньги</button>
+    </nav>
+
+    <div class="topbar-actions">
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="Переключить тему" title="Светлая / тёмная тема">
+        <svg class="ico-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="ico-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-label="Настройки" title="Настройки">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.66 8a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 3.64h.1a1.7 1.7 0 0 0 1-1.56V2a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.1a1.7 1.7 0 0 0 1.56 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ==================== ОБЗОР ==================== -->
+    <section class="view is-active" id="view-overview" data-view="overview">
+      <div class="view-head">
+        <div>
+          <h2>Обзор</h2>
+          <p class="muted" id="overviewSub">Сводка за этот месяц</p>
+        </div>
+        <div class="chips" id="overviewPeriod" role="group" aria-label="Период сводки">
+          <button type="button" class="chip" data-period="month">Этот месяц</button>
+          <button type="button" class="chip" data-period="prev">Прошлый</button>
+          <button type="button" class="chip" data-period="all">Всё время</button>
+        </div>
+      </div>
+
+      <div class="stats">
+        <article class="stat">
+          <span class="stat-label">Заработано</span>
+          <strong class="stat-value" id="statEarned">0 ₽</strong>
+          <span class="stat-hint" id="statEarnedHint">0 работ</span>
+        </article>
+        <article class="stat">
+          <span class="stat-label">Оплачено</span>
+          <strong class="stat-value" id="statPaid">0 ₽</strong>
+          <span class="stat-hint" id="statPaidHint">0 платежей</span>
+        </article>
+        <article class="stat stat-debt">
+          <span class="stat-label">Долг</span>
+          <strong class="stat-value" id="statDebt">0 ₽</strong>
+          <span class="stat-hint" id="statDebtHint">Должников: 0</span>
+        </article>
+        <article class="stat">
+          <span class="stat-label">Часы</span>
+          <strong class="stat-value" id="statHours">0</strong>
+          <span class="stat-hint" id="statHoursHint">за период</span>
+        </article>
+      </div>
+
+      <div class="quick-actions">
+        <button class="btn btn-primary" type="button" data-action="new-work">+ Работа</button>
+        <button class="btn" type="button" data-action="new-payment">+ Оплата</button>
+        <button class="btn btn-ghost" type="button" data-action="new-client">+ Клиент</button>
+      </div>
+
+      <div class="onboarding" id="onboarding" hidden>
+        <div class="onboarding-art" aria-hidden="true">🗂</div>
+        <h3>Начните с первого клиента</h3>
+        <p>Добавьте клиента со ставкой за час, затем вносите отработанные часы и оплаты. Баланс и долг посчитаются сами.</p>
+        <button class="btn btn-primary" type="button" data-action="new-client">Добавить клиента</button>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Должники <span class="count" id="debtorsCount"></span></h3>
+          <button class="link" type="button" data-action="show-debtors">Все</button>
+        </div>
+        <div class="list" id="debtorsList"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Последние работы</h3>
+          <button class="link" type="button" data-action="show-works">Все</button>
+        </div>
+        <div class="list" id="recentWorks"></div>
+      </section>
+    </section>
+
+    <!-- ==================== КЛИЕНТЫ ==================== -->
+    <section class="view" id="view-clients" data-view="clients">
+      <div class="view-head">
+        <div>
+          <h2>Клиенты</h2>
+          <p class="muted" id="clientsSub">Пока никого нет</p>
+        </div>
+        <button class="btn btn-primary only-desktop" type="button" data-action="new-client">+ Клиент</button>
+      </div>
+
+      <div class="toolbar">
+        <input class="input" id="clientSearch" type="search" placeholder="Поиск: имя, телефон, заметка" autocomplete="off" />
+        <select class="input select-narrow" id="clientSort" aria-label="Сортировка клиентов">
+          <option value="name">По имени</option>
+          <option value="debt">По долгу</option>
+          <option value="rate">По ставке</option>
+          <option value="hours">По часам</option>
+        </select>
+      </div>
+
+      <div class="chips" id="clientMode" role="group" aria-label="Фильтр клиентов">
+        <button type="button" class="chip" data-mode="all">Все</button>
+        <button type="button" class="chip" data-mode="debt">С долгом</button>
+        <button type="button" class="chip" data-mode="clean">Без долга</button>
+      </div>
+
+      <div class="list" id="clientsList"></div>
+      <div class="empty" id="clientsEmpty" hidden>
+        <div class="empty-art" aria-hidden="true">👥</div>
+        <p id="clientsEmptyText">Клиентов пока нет</p>
+        <button class="btn btn-primary" type="button" data-action="new-client">Добавить клиента</button>
+      </div>
+    </section>
+
+    <!-- ==================== РАБОТЫ ==================== -->
+    <section class="view" id="view-works" data-view="works">
+      <div class="view-head">
+        <div>
+          <h2>Работы</h2>
+          <p class="muted" id="worksSub">Почасовка по дням</p>
+        </div>
+        <button class="btn btn-primary only-desktop" type="button" data-action="new-work">+ Работа</button>
+      </div>
+
+      <div class="toolbar">
+        <select class="input" id="worksClient" aria-label="Фильтр по клиенту">
+          <option value="">Все клиенты</option>
+        </select>
+        <input class="input" id="worksSearch" type="search" placeholder="Поиск по описанию" autocomplete="off" />
+      </div>
+
+      <div class="chips" id="worksPeriod" role="group" aria-label="Период работ">
+        <button type="button" class="chip" data-period="today">Сегодня</button>
+        <button type="button" class="chip" data-period="week">7 дней</button>
+        <button type="button" class="chip" data-period="month">Месяц</button>
+        <button type="button" class="chip" data-period="all">Всё</button>
+      </div>
+
+      <div class="list" id="worksList"></div>
+      <div class="empty" id="worksEmpty" hidden>
+        <div class="empty-art" aria-hidden="true">⏱</div>
+        <p id="worksEmptyText">Работ пока нет</p>
+        <button class="btn btn-primary" type="button" data-action="new-work">Внести часы</button>
+      </div>
+    </section>
+
+    <!-- ==================== ДЕНЬГИ ==================== -->
+    <section class="view" id="view-money" data-view="money">
+      <div class="view-head">
+        <div>
+          <h2>Деньги</h2>
+          <p class="muted" id="moneySub">Оплаты от клиентов</p>
+        </div>
+        <button class="btn btn-primary only-desktop" type="button" data-action="new-payment">+ Оплата</button>
+      </div>
+
+      <div class="toolbar">
+        <select class="input" id="moneyClient" aria-label="Фильтр по клиенту">
+          <option value="">Все клиенты</option>
+        </select>
+        <input class="input" id="moneySearch" type="search" placeholder="Поиск по комментарию" autocomplete="off" />
+      </div>
+
+      <div class="chips" id="moneyPeriod" role="group" aria-label="Период оплат">
+        <button type="button" class="chip" data-period="today">Сегодня</button>
+        <button type="button" class="chip" data-period="week">7 дней</button>
+        <button type="button" class="chip" data-period="month">Месяц</button>
+        <button type="button" class="chip" data-period="all">Всё</button>
+      </div>
+
+      <div class="total-bar" id="moneyTotal" hidden>
+        <span>Итого за период</span>
+        <strong id="moneyTotalValue">0 ₽</strong>
+      </div>
+
+      <div class="list" id="moneyList"></div>
+      <div class="empty" id="moneyEmpty" hidden>
+        <div class="empty-art" aria-hidden="true">💸</div>
+        <p id="moneyEmptyText">Оплат пока нет</p>
+        <button class="btn btn-primary" type="button" data-action="new-payment">Внести оплату</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar" aria-label="Разделы">
+    <button class="tabbar-btn is-active" data-view="overview" type="button">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.6"/><rect x="14" y="3" width="7" height="5" rx="1.6"/><rect x="14" y="12" width="7" height="9" rx="1.6"/><rect x="3" y="16" width="7" height="5" rx="1.6"/></svg>
+      <span>Обзор</span>
+    </button>
+    <button class="tabbar-btn" data-view="clients" type="button">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-1.8a4 4 0 0 0-4-4H6.5a4 4 0 0 0-4 4V21"/><circle cx="9.2" cy="7.5" r="3.6"/><path d="M21.5 21v-1.8a4 4 0 0 0-3-3.86M16.2 4a3.6 3.6 0 0 1 0 6.9"/></svg>
+      <span>Клиенты</span>
+    </button>
+    <button class="tabbar-btn" data-view="works" type="button">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
+      <span>Работы</span>
+    </button>
+    <button class="tabbar-btn" data-view="money" type="button">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12.5" rx="2.4"/><circle cx="12" cy="12.2" r="2.6"/><path d="M6 9.2v.01M18 15.2v.01"/></svg>
+      <span>Деньги</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ==================== КЛИЕНТ ==================== -->
+<div class="modal" id="clientModal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="clientModalTitle">
+    <div class="modal-head">
+      <h3 id="clientModalTitle">Новый клиент</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <form id="clientForm" novalidate>
+      <input type="hidden" id="clientId" />
+      <label class="field">
+        <span>Имя *</span>
+        <input class="input" id="clientName" autocomplete="off" placeholder="Например, Анна Смирнова" />
+        <em class="err" id="clientNameErr" hidden>Введите имя</em>
+      </label>
+      <div class="grid-2">
+        <label class="field">
+          <span id="rateLabel">Ставка, ₽/час *</span>
+          <input class="input" id="clientRate" type="number" min="0" step="50" value="1000" inputmode="decimal" />
+          <em class="err" id="clientRateErr" hidden>Укажите ставку</em>
+        </label>
+        <label class="field">
+          <span>Телефон</span>
+          <input class="input" id="clientPhone" type="tel" autocomplete="off" placeholder="+7 900 000-00-00" />
+        </label>
+      </div>
+      <label class="field">
+        <span>Email</span>
+        <input class="input" id="clientEmail" type="email" autocomplete="off" placeholder="mail@example.com" />
+        <em class="err" id="clientEmailErr" hidden>Проверьте адрес</em>
+      </label>
+      <label class="field">
+        <span>Заметка</span>
+        <textarea class="input" id="clientNote" rows="3" placeholder="Договорённости, особенности, реквизиты"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== РАБОТА ==================== -->
+<div class="modal" id="workModal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="workModalTitle">
+    <div class="modal-head">
+      <h3 id="workModalTitle">Новая работа</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <form id="workForm" novalidate>
+      <input type="hidden" id="workId" />
+      <div class="grid-2">
+        <label class="field">
+          <span>Клиент *</span>
+          <select class="input" id="workClient">
+            <option value="">Выберите клиента</option>
+          </select>
+          <em class="err" id="workClientErr" hidden>Выберите клиента</em>
+        </label>
+        <label class="field">
+          <span>Дата *</span>
+          <input class="input" id="workDate" type="date" />
+        </label>
+      </div>
+
+      <div class="field">
+        <span>Часы *</span>
+        <div class="hours-row">
+          <input class="input" id="workHours" type="number" min="0.25" step="0.25" value="1" inputmode="decimal" />
+          <div class="chips sm" id="hoursChips">
+            <button type="button" class="chip" data-hours="1">1</button>
+            <button type="button" class="chip" data-hours="2">2</button>
+            <button type="button" class="chip" data-hours="3">3</button>
+            <button type="button" class="chip" data-hours="4">4</button>
+            <button type="button" class="chip" data-hours="6">6</button>
+            <button type="button" class="chip" data-hours="8">8</button>
+          </div>
+        </div>
+        <em class="err" id="workHoursErr" hidden>Укажите часы (шаг 15 минут)</em>
+      </div>
+
+      <div class="grid-2">
+        <label class="field">
+          <span>Начало</span>
+          <input class="input" id="workStart" type="time" />
+        </label>
+        <label class="field">
+          <span>Окончание</span>
+          <input class="input" id="workEnd" type="time" />
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Категория</span>
+        <select class="input" id="workCategory">
+          <option value="">Без категории</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Описание</span>
+        <textarea class="input" id="workNote" rows="3" placeholder="Что сделали"></textarea>
+      </label>
+
+      <div class="amount-preview" id="workPreview">Сумма: 0 ₽</div>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== ОПЛАТА ==================== -->
+<div class="modal" id="paymentModal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="paymentModalTitle">
+    <div class="modal-head">
+      <h3 id="paymentModalTitle">Новая оплата</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <form id="paymentForm" novalidate>
+      <input type="hidden" id="paymentId" />
+      <div class="grid-2">
+        <label class="field">
+          <span>Клиент *</span>
+          <select class="input" id="paymentClient">
+            <option value="">Выберите клиента</option>
+          </select>
+          <em class="err" id="paymentClientErr" hidden>Выберите клиента</em>
+        </label>
+        <label class="field">
+          <span>Дата *</span>
+          <input class="input" id="paymentDate" type="date" />
+        </label>
+      </div>
+      <label class="field">
+        <span>Сумма *</span>
+        <input class="input" id="paymentAmount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0" />
+        <em class="err" id="paymentAmountErr" hidden>Укажите сумму больше нуля</em>
+      </label>
+      <div class="grid-2">
+        <label class="field">
+          <span>Способ</span>
+          <select class="input" id="paymentMethod">
+            <option value="cash">Наличные</option>
+            <option value="card">Карта</option>
+            <option value="transfer">Перевод</option>
+            <option value="online">Онлайн</option>
+            <option value="other">Другое</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Комментарий</span>
+          <input class="input" id="paymentNote" autocomplete="off" placeholder="Необязательно" />
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== КАРТОЧКА КЛИЕНТА ==================== -->
+<div class="modal" id="detailModal" aria-hidden="true">
+  <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+    <div class="modal-head">
+      <div>
+        <h3 id="detailTitle">Клиент</h3>
+        <p class="muted" id="detailRate"></p>
+      </div>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <div id="detailBody"></div>
+  </div>
+</div>
+
+<!-- ==================== НАСТРОЙКИ ==================== -->
+<div class="modal" id="settingsModal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-head">
+      <h3 id="settingsTitle">Настройки</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+
+    <section class="settings-block">
+      <h4>Общие</h4>
+      <div class="grid-2">
+        <label class="field">
+          <span>Валюта</span>
+          <select class="input" id="settingCurrency">
+            <option value="RUB">Российский рубль, ₽</option>
+            <option value="USD">Доллар, $</option>
+            <option value="EUR">Евро, €</option>
+            <option value="KZT">Тенге, ₸</option>
+            <option value="GEL">Лари, ₾</option>
+            <option value="UAH">Гривна, ₴</option>
+            <option value="BYN">Белорусский рубль, Br</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Тема</span>
+          <select class="input" id="settingTheme">
+            <option value="auto">Как в системе</option>
+            <option value="light">Светлая</option>
+            <option value="dark">Тёмная</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-block">
+      <h4>PIN-код</h4>
+      <p class="muted" id="pinStatus">PIN не задан</p>
+      <div class="settings-actions">
+        <button class="btn btn-sm" type="button" id="pinSetupBtn">Задать PIN</button>
+        <button class="btn btn-sm btn-ghost" type="button" id="pinLockBtn" hidden>Заблокировать</button>
+        <button class="btn btn-sm btn-ghost" type="button" id="pinRemoveBtn" hidden>Убрать PIN</button>
+      </div>
+      <p class="hint">PIN — номинальная защита от случайного взгляда. Данные не шифруются и хранятся в браузере устройства.</p>
+    </section>
+
+    <section class="settings-block">
+      <h4>Данные</h4>
+      <div class="settings-actions">
+        <button class="btn btn-sm" type="button" data-action="backup">Скачать бэкап</button>
+        <button class="btn btn-sm" type="button" data-action="import">Импорт бэкапа</button>
+        <button class="btn btn-sm" type="button" data-action="csv-works">Работы в CSV</button>
+        <button class="btn btn-sm" type="button" data-action="csv-payments">Оплаты в CSV</button>
+        <button class="btn btn-sm" type="button" data-action="trash">Корзина <span class="badge badge-zero" id="trashCount">0</span></button>
+      </div>
+      <p class="hint">Всё хранится только на этом устройстве. Бэкап — единственный способ перенести данные на другое устройство.</p>
+    </section>
+
+    <section class="settings-block danger-zone">
+      <h4>Опасная зона</h4>
+      <button class="btn btn-sm btn-danger" type="button" data-action="clear-all">Очистить все данные</button>
+      <p class="hint">Удаляет клиентов, работы, оплаты и корзину без возможности восстановления.</p>
+    </section>
+
+    <p class="about">Фрил-Бух · версия <span id="appVersion">1.0.0</span> · данные на устройстве</p>
+  </div>
+</div>
+
+<!-- ==================== PIN ==================== -->
+<div class="modal" id="pinModal" aria-hidden="true">
+  <div class="modal-card modal-small" role="dialog" aria-modal="true" aria-labelledby="pinModalTitle">
+    <div class="modal-head">
+      <h3 id="pinModalTitle">PIN-код</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <form id="pinForm">
+      <label class="field">
+        <span>Новый PIN (4–8 цифр)</span>
+        <input class="input" id="pinNew" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="••••" />
+      </label>
+      <label class="field">
+        <span>Повторите PIN</span>
+        <input class="input" id="pinRepeat" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="••••" />
+      </label>
+      <em class="err" id="pinErr" hidden></em>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== КОРЗИНА ==================== -->
+<div class="modal" id="trashModal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="trashTitle">
+    <div class="modal-head">
+      <h3 id="trashTitle">Корзина</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <div id="trashBody"></div>
+  </div>
+</div>
+
+<!-- ==================== ПОДТВЕРЖДЕНИЕ ==================== -->
+<div class="modal" id="confirmModal" aria-hidden="true">
+  <div class="modal-card modal-small" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal-head">
+      <h3 id="confirmTitle">Подтвердите</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <p class="confirm-text" id="confirmText"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+      <button class="btn btn-danger" type="button" id="confirmOk">Удалить</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ЭКРАН БЛОКИРОВКИ ==================== -->
+<div class="lock" id="lockScreen" hidden>
+  <div class="lock-card">
+    <img src="icons/icon.svg" alt="" width="64" height="64" />
+    <h2>Фрил-Бух</h2>
+    <p class="muted">Введите PIN-код</p>
+    <form id="lockForm">
+      <input class="input lock-input" id="lockPin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="••••" aria-label="PIN-код" />
+      <em class="err" id="lockErr" hidden>Неверный PIN</em>
+      <button class="btn btn-primary lock-submit" type="submit">Открыть</button>
+    </form>
+    <p class="lock-hint">Забыли PIN? Данные можно сбросить только очисткой данных сайта в браузере.</p>
+  </div>
+</div>
+
+<input type="file" id="importFile" accept=".json,application/json" hidden />
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<noscript><p style="padding:24px;text-align:center">Для работы приложения нужен JavaScript.</p></noscript>
+
+<script src="js/db.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
