@@ -1,5 +1,7 @@
 # Фрил-Бух
 
+[![CI](https://github.com/SMDsys/fril-buh/actions/workflows/ci.yml/badge.svg)](https://github.com/SMDsys/fril-buh/actions/workflows/ci.yml)
+
 Бухгалтерия фрилансера: клиенты, проекты, часы, оплаты, расходы, счета и
 отчёты. Без регистрации, без сервера и без сборки — всё работает в браузере и
 хранится на вашем устройстве.
@@ -86,6 +88,7 @@ npm test
 
 Тесты проверяют синтаксис JS, разделы и id в HTML, manifest, иконки,
 скриншоты и список файлов офлайн-кэша. Внешних зависимостей нет.
+GitHub Actions запускает `npm test` на каждый push и pull request.
 
 ## Структура
 
