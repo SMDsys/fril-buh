@@ -1,15 +1,18 @@
 /* Фрил-Бух — хранилище: IndexedDB с запасным вариантом в localStorage. */
 window.DB = (() => {
   const NAME = 'frilbuh-db';
-  const VERSION = 1;
+  const VERSION = 2;
   const LS_KEY = 'frilbuh.data.v1';
-  const STORES = ['clients', 'works', 'payments', 'trash', 'meta'];
+  const STORES = ['clients', 'projects', 'works', 'payments', 'expenses', 'invoices', 'trash', 'meta'];
 
   let db = null;
   let mode = 'idb';
 
   function emptyData() {
-    return { clients: [], works: [], payments: [], trash: [], meta: {} };
+    return {
+      clients: [], projects: [], works: [], payments: [], expenses: [], invoices: [],
+      trash: [], meta: {}
+    };
   }
 
   function openIDB() {
@@ -19,8 +22,11 @@ window.DB = (() => {
       req.onupgradeneeded = () => {
         const d = req.result;
         if (!d.objectStoreNames.contains('clients')) d.createObjectStore('clients', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('projects')) d.createObjectStore('projects', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('works')) d.createObjectStore('works', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('payments')) d.createObjectStore('payments', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('expenses')) d.createObjectStore('expenses', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('invoices')) d.createObjectStore('invoices', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('trash')) d.createObjectStore('trash', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'key' });
       };
@@ -170,8 +176,11 @@ window.DB = (() => {
   async function replaceAll(payload) {
     const data = {
       clients: Array.isArray(payload.clients) ? payload.clients : [],
+      projects: Array.isArray(payload.projects) ? payload.projects : [],
       works: Array.isArray(payload.works) ? payload.works : [],
       payments: Array.isArray(payload.payments) ? payload.payments : [],
+      expenses: Array.isArray(payload.expenses) ? payload.expenses : [],
+      invoices: Array.isArray(payload.invoices) ? payload.invoices : [],
       trash: Array.isArray(payload.trash) ? payload.trash : [],
       meta: payload.meta && typeof payload.meta === 'object' && !Array.isArray(payload.meta) ? payload.meta : {}
     };
@@ -180,8 +189,11 @@ window.DB = (() => {
       await tx(STORES, 'readwrite', (t) => {
         STORES.forEach((s) => t.objectStore(s).clear());
         data.clients.forEach((row) => t.objectStore('clients').put(row));
+        data.projects.forEach((row) => t.objectStore('projects').put(row));
         data.works.forEach((row) => t.objectStore('works').put(row));
         data.payments.forEach((row) => t.objectStore('payments').put(row));
+        data.expenses.forEach((row) => t.objectStore('expenses').put(row));
+        data.invoices.forEach((row) => t.objectStore('invoices').put(row));
         data.trash.forEach((row) => t.objectStore('trash').put(row));
         Object.keys(data.meta).forEach((key) => t.objectStore('meta').put({ key, value: data.meta[key] }));
       });
@@ -190,7 +202,11 @@ window.DB = (() => {
 
     const meta = {};
     Object.keys(data.meta).forEach((key) => { meta[key] = data.meta[key]; });
-    lsWrite({ clients: data.clients, works: data.works, payments: data.payments, trash: data.trash, meta });
+    lsWrite({
+      clients: data.clients, projects: data.projects, works: data.works,
+      payments: data.payments, expenses: data.expenses, invoices: data.invoices,
+      trash: data.trash, meta
+    });
   }
 
   async function getMeta(key) {

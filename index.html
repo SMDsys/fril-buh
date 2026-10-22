@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Фрил-Бух — учёт часов и оплат</title>
-  <meta name="description" content="Простая бухгалтерия для фрилансера: клиенты, почасовка, оплаты и долги. Данные хранятся на устройстве." />
+  <title>Фрил-Бух — часы, деньги и проекты</title>
+  <meta name="description" content="Простая бухгалтерия для фрилансера: клиенты, проекты, часы, оплаты, расходы и отчёты. Данные хранятся на устройстве." />
   <meta name="theme-color" content="#f4f6f5" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -44,7 +44,7 @@
       <img class="brand-logo" src="icons/icon.svg" alt="" width="44" height="44" />
       <span class="brand-text">
         <strong>Фрил-Бух</strong>
-        <span>учёт часов и оплат</span>
+        <span>часы и деньги</span>
       </span>
     </a>
 
@@ -53,9 +53,14 @@
       <button class="tab" data-view="clients" type="button">Клиенты</button>
       <button class="tab" data-view="works" type="button">Работы</button>
       <button class="tab" data-view="money" type="button">Деньги</button>
+      <button class="tab" data-view="reports" type="button">Отчёты</button>
     </nav>
 
     <div class="topbar-actions">
+      <button class="icon-btn timer-btn" id="timerBtn" type="button" aria-label="Таймер" title="Таймер">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 2h6"/></svg>
+        <span class="timer-chip" id="timerChip" hidden>00:00</span>
+      </button>
       <button class="icon-btn" id="themeBtn" type="button" aria-label="Переключить тему" title="Светлая / тёмная тема">
         <svg class="ico-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
         <svg class="ico-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
@@ -109,6 +114,30 @@
         <button class="btn" type="button" data-action="new-payment">+ Оплата</button>
         <button class="btn btn-ghost" type="button" data-action="new-client">+ Клиент</button>
       </div>
+
+      <div class="notice notice-warn" id="backupBanner" hidden>
+        <div class="notice-text">
+          <strong>Пора сделать бэкап</strong>
+          <span id="backupBannerText">Данные хранятся только в этом браузере.</span>
+        </div>
+        <div class="notice-actions">
+          <button class="btn btn-sm" type="button" data-action="backup">Скачать</button>
+          <button class="btn btn-sm btn-ghost" type="button" data-action="snooze-backup">Позже</button>
+        </div>
+      </div>
+
+      <section class="panel finance-panel">
+        <div class="panel-head">
+          <h3>Финансы за период</h3>
+          <button class="link" type="button" data-view-jump="reports">Подробнее</button>
+        </div>
+        <div class="finance-grid">
+          <div class="finance-row"><span>Заработано</span><b id="finEarned">0 ₽</b></div>
+          <div class="finance-row"><span>Расходы</span><b id="finExpenses">0 ₽</b></div>
+          <div class="finance-row" id="finTaxRow"><span>Налог <small id="finTaxRate"></small></span><b id="finTax">0 ₽</b></div>
+          <div class="finance-row finance-total"><span>Чистыми</span><b id="finNet">0 ₽</b></div>
+        </div>
+      </section>
 
       <div class="onboarding" id="onboarding" hidden>
         <div class="onboarding-art" aria-hidden="true">🗂</div>
@@ -175,7 +204,10 @@
           <h2>Работы</h2>
           <p class="muted" id="worksSub">Почасовка по дням</p>
         </div>
-        <button class="btn btn-primary only-desktop" type="button" data-action="new-work">+ Работа</button>
+        <div class="view-head-actions">
+          <button class="btn btn-sm only-desktop" type="button" data-action="week-fill">Неделя</button>
+          <button class="btn btn-primary only-desktop" type="button" data-action="new-work">+ Работа</button>
+        </div>
       </div>
 
       <div class="toolbar">
@@ -207,7 +239,12 @@
           <h2>Деньги</h2>
           <p class="muted" id="moneySub">Оплаты от клиентов</p>
         </div>
-        <button class="btn btn-primary only-desktop" type="button" data-action="new-payment">+ Оплата</button>
+        <button class="btn btn-primary only-desktop" id="moneyAddBtn" type="button" data-action="new-payment">+ Оплата</button>
+      </div>
+
+      <div class="chips" id="moneyKind" role="group" aria-label="Тип записей">
+        <button type="button" class="chip" data-kind="payments">Оплаты</button>
+        <button type="button" class="chip" data-kind="expenses">Расходы</button>
       </div>
 
       <div class="toolbar">
@@ -225,7 +262,7 @@
       </div>
 
       <div class="total-bar" id="moneyTotal" hidden>
-        <span>Итого за период</span>
+        <span id="moneyTotalLabel">Итого за период</span>
         <strong id="moneyTotalValue">0 ₽</strong>
       </div>
 
@@ -235,6 +272,49 @@
         <p id="moneyEmptyText">Оплат пока нет</p>
         <button class="btn btn-primary" type="button" data-action="new-payment">Внести оплату</button>
       </div>
+    </section>
+
+    <!-- ==================== ОТЧЁТЫ ==================== -->
+    <section class="view" id="view-reports" data-view="reports">
+      <div class="view-head">
+        <div>
+          <h2>Отчёты</h2>
+          <p class="muted" id="reportsSub">Доходы, расходы и часы</p>
+        </div>
+        <div class="chips" id="reportsPeriod" role="group" aria-label="Период отчёта">
+          <button type="button" class="chip" data-period="month">Месяц</button>
+          <button type="button" class="chip" data-period="prev">Прошлый</button>
+          <button type="button" class="chip" data-period="all">Всё</button>
+        </div>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><h3>Последние 6 месяцев</h3></div>
+        <div class="chart" id="reportChart"></div>
+        <div class="chart-legend">
+          <span><i class="legend-dot earned"></i>Заработано</span>
+          <span><i class="legend-dot paid"></i>Оплачено</span>
+          <span><i class="legend-dot expense"></i>Расходы</span>
+        </div>
+      </section>
+
+      <div class="report-summary" id="reportSummary"></div>
+
+      <div class="report-columns">
+        <section class="panel">
+          <div class="panel-head"><h3>По клиентам</h3></div>
+          <div id="reportClients"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h3>По категориям</h3></div>
+          <div id="reportCategories"></div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><h3>Долги по давности</h3></div>
+        <div id="reportAging"></div>
+      </section>
     </section>
   </main>
 
@@ -254,6 +334,10 @@
     <button class="tabbar-btn" data-view="money" type="button">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12.5" rx="2.4"/><circle cx="12" cy="12.2" r="2.6"/><path d="M6 9.2v.01M18 15.2v.01"/></svg>
       <span>Деньги</span>
+    </button>
+    <button class="tabbar-btn" data-view="reports" type="button">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>Отчёты</span>
     </button>
   </nav>
 </div>
@@ -322,6 +406,13 @@
           <input class="input" id="workDate" type="date" />
         </label>
       </div>
+
+      <label class="field" id="workProjectField" hidden>
+        <span>Проект</span>
+        <select class="input" id="workProject">
+          <option value="">Без проекта</option>
+        </select>
+      </label>
 
       <div class="field">
         <span>Часы *</span>
@@ -399,6 +490,12 @@
         <input class="input" id="paymentAmount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0" />
         <em class="err" id="paymentAmountErr" hidden>Укажите сумму больше нуля</em>
       </label>
+      <label class="field" id="paymentProjectField" hidden>
+        <span>Проект</span>
+        <select class="input" id="paymentProject">
+          <option value="">Без проекта</option>
+        </select>
+      </label>
       <div class="grid-2">
         <label class="field">
           <span>Способ</span>
@@ -420,6 +517,263 @@
         <button class="btn btn-primary" type="submit">Сохранить</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- ==================== ТАЙМЕР ==================== -->
+<div class="modal" id="timerModal" aria-hidden="true">
+  <div class="modal-card modal-small" role="dialog" aria-modal="true" aria-labelledby="timerModalTitle">
+    <div class="modal-head">
+      <h3 id="timerModalTitle">Таймер</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <div id="timerIdle">
+      <p class="muted timer-hint">Запустите таймер перед работой. Когда закончите, часы подставятся в новую запись.</p>
+      <form id="timerForm">
+        <label class="field">
+          <span>Клиент *</span>
+          <select class="input" id="timerClient">
+            <option value="">Выберите клиента</option>
+          </select>
+          <em class="err" id="timerClientErr" hidden>Выберите клиента</em>
+        </label>
+        <label class="field">
+          <span>Что делаете</span>
+          <input class="input" id="timerNote" autocomplete="off" placeholder="Необязательно" />
+        </label>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+          <button class="btn btn-primary" type="submit">Старт</button>
+        </div>
+      </form>
+    </div>
+    <div id="timerRunning" hidden>
+      <div class="timer-display" id="timerDisplay">00:00:00</div>
+      <p class="timer-running-client" id="timerRunningClient"></p>
+      <p class="muted" id="timerRunningNote"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-action="timer-cancel">Отменить</button>
+        <button class="btn btn-primary" type="button" data-action="timer-stop">Остановить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== НЕДЕЛЯ ==================== -->
+<div class="modal" id="weekModal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="weekModalTitle">
+    <div class="modal-head">
+      <h3 id="weekModalTitle">Часы за неделю</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <form id="weekForm">
+      <label class="field">
+        <span>Клиент *</span>
+        <select class="input" id="weekClient">
+          <option value="">Выберите клиента</option>
+        </select>
+        <em class="err" id="weekClientErr" hidden>Выберите клиента</em>
+      </label>
+      <div class="week-nav">
+        <button class="icon-btn sm" type="button" data-week="-1" aria-label="Предыдущая неделя">‹</button>
+        <strong id="weekLabel"></strong>
+        <button class="icon-btn sm" type="button" data-week="1" aria-label="Следующая неделя">›</button>
+      </div>
+      <div class="week-grid" id="weekDays"></div>
+      <div class="amount-preview" id="weekPreview">0 ч · 0 ₽</div>
+      <p class="hint">Часы добавятся отдельными записями. Уже существующие записи не изменятся.</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit">Добавить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== ПРОЕКТ ==================== -->
+<div class="modal" id="projectModal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="projectModalTitle">
+    <div class="modal-head">
+      <h3 id="projectModalTitle">Новый проект</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <form id="projectForm" novalidate>
+      <input type="hidden" id="projectId" />
+      <label class="field">
+        <span>Клиент *</span>
+        <select class="input" id="projectClient">
+          <option value="">Выберите клиента</option>
+        </select>
+        <em class="err" id="projectClientErr" hidden>Выберите клиента</em>
+      </label>
+      <label class="field">
+        <span>Название *</span>
+        <input class="input" id="projectName" autocomplete="off" placeholder="Например, лендинг для студии" />
+        <em class="err" id="projectNameErr" hidden>Введите название</em>
+      </label>
+      <div class="grid-2">
+        <label class="field">
+          <span>Тип</span>
+          <select class="input" id="projectType">
+            <option value="hourly">Почасовая</option>
+            <option value="fixed">Фиксированная сумма</option>
+          </select>
+        </label>
+        <label class="field">
+          <span id="projectBudgetLabel">Бюджет, ₽</span>
+          <input class="input" id="projectBudget" type="number" min="0" step="100" inputmode="decimal" placeholder="0" />
+          <em class="err" id="projectBudgetErr" hidden>Укажите сумму проекта</em>
+        </label>
+      </div>
+      <div class="grid-2">
+        <label class="field">
+          <span>Начало</span>
+          <input class="input" id="projectStart" type="date" />
+        </label>
+        <label class="field">
+          <span>Срок</span>
+          <input class="input" id="projectDue" type="date" />
+        </label>
+      </div>
+      <div class="grid-2">
+        <label class="field">
+          <span>Статус</span>
+          <select class="input" id="projectStatus">
+            <option value="active">В работе</option>
+            <option value="done">Завершён</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Заметка</span>
+          <input class="input" id="projectNote" autocomplete="off" placeholder="Необязательно" />
+        </label>
+      </div>
+      <p class="hint" id="projectHint">В почасовом проекте сумма считается по часам. В фиксированном — по бюджету, часы идут только для статистики.</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== РАСХОД ==================== -->
+<div class="modal" id="expenseModal" aria-hidden="true">
+  <div class="modal-card modal-small" role="dialog" aria-modal="true" aria-labelledby="expenseModalTitle">
+    <div class="modal-head">
+      <h3 id="expenseModalTitle">Новый расход</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <form id="expenseForm" novalidate>
+      <input type="hidden" id="expenseId" />
+      <div class="grid-2">
+        <label class="field">
+          <span>Дата *</span>
+          <input class="input" id="expenseDate" type="date" />
+        </label>
+        <label class="field">
+          <span>Сумма *</span>
+          <input class="input" id="expenseAmount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0" />
+          <em class="err" id="expenseAmountErr" hidden>Укажите сумму больше нуля</em>
+        </label>
+      </div>
+      <label class="field">
+        <span>Категория</span>
+        <select class="input" id="expenseCategory"></select>
+      </label>
+      <label class="field">
+        <span>Комментарий</span>
+        <input class="input" id="expenseNote" autocomplete="off" placeholder="Например, хостинг за октябрь" />
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== СЧЁТ ==================== -->
+<div class="modal" id="invoiceModal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="invoiceModalTitle">
+    <div class="modal-head">
+      <div>
+        <h3 id="invoiceModalTitle">Новый счёт</h3>
+        <p class="muted" id="invoiceNumberPreview"></p>
+      </div>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <form id="invoiceForm" novalidate>
+      <label class="field">
+        <span>Клиент *</span>
+        <select class="input" id="invoiceClient">
+          <option value="">Выберите клиента</option>
+        </select>
+        <em class="err" id="invoiceClientErr" hidden>Выберите клиента</em>
+      </label>
+      <div class="grid-2">
+        <label class="field">
+          <span>Период</span>
+          <select class="input" id="invoicePeriod">
+            <option value="month">Этот месяц</option>
+            <option value="prev">Прошлый месяц</option>
+            <option value="all">Всё время</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Дата счёта</span>
+          <input class="input" id="invoiceDate" type="date" />
+        </label>
+      </div>
+      <div class="grid-2">
+        <label class="field">
+          <span>Срок оплаты</span>
+          <input class="input" id="invoiceDue" type="date" />
+        </label>
+        <label class="field">
+          <span>Статус</span>
+          <select class="input" id="invoiceStatus">
+            <option value="draft">Черновик</option>
+            <option value="sent">Выставлен</option>
+            <option value="paid">Оплачен</option>
+          </select>
+        </label>
+      </div>
+      <label class="field">
+        <span>Примечание</span>
+        <input class="input" id="invoiceNote" autocomplete="off" placeholder="Например, оплата до 5 числа" />
+      </label>
+      <div class="invoice-preview" id="invoicePreview"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit">Создать и печатать</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== ИМПОРТ ==================== -->
+<div class="modal" id="importModal" aria-hidden="true">
+  <div class="modal-card modal-small" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
+    <div class="modal-head">
+      <h3 id="importModalTitle">Импорт бэкапа</h3>
+      <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
+    </div>
+    <div id="importInfo"></div>
+    <div class="import-mode">
+      <label class="radio-row">
+        <input type="radio" name="importMode" value="merge" checked />
+        <span><b>Объединить</b><small>Добавить новые записи, существующие оставить</small></span>
+      </label>
+      <label class="radio-row">
+        <input type="radio" name="importMode" value="replace" />
+        <span><b>Заменить всё</b><small>Удалить текущие данные и загрузить из файла</small></span>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" type="button" data-close>Отмена</button>
+      <button class="btn btn-primary" type="button" id="importApply">Импортировать</button>
+    </div>
   </div>
 </div>
 
@@ -449,7 +803,7 @@
       <h4>Общие</h4>
       <div class="grid-2">
         <label class="field">
-          <span>Валюта</span>
+          <span>Валюта отображения</span>
           <select class="input" id="settingCurrency">
             <option value="RUB">Российский рубль, ₽</option>
             <option value="USD">Доллар, $</option>
@@ -459,6 +813,7 @@
             <option value="UAH">Гривна, ₴</option>
             <option value="BYN">Белорусский рубль, Br</option>
           </select>
+          <em class="hint hint-tight">Меняется только символ. Суммы не конвертируются.</em>
         </label>
         <label class="field">
           <span>Тема</span>
@@ -469,6 +824,30 @@
           </select>
         </label>
       </div>
+    </section>
+
+    <section class="settings-block">
+      <h4>Для счетов и налогов</h4>
+      <div class="grid-2">
+        <label class="field">
+          <span>Ваше имя или ИП</span>
+          <input class="input" id="settingMyName" autocomplete="off" placeholder="Например, Иван Петров" />
+        </label>
+        <label class="field">
+          <span>Налог, % от дохода</span>
+          <input class="input" id="settingTaxRate" type="number" min="0" max="50" step="0.1" inputmode="decimal" placeholder="0" />
+        </label>
+      </div>
+      <label class="field">
+        <span>Реквизиты для счёта</span>
+        <textarea class="input" id="settingMyDetails" rows="2" placeholder="ИНН, банк, счёт — необязательно"></textarea>
+      </label>
+      <p class="hint">Налог показывается как резерв в обзоре и отчётах. Ставка не влияет на баланс клиентов.</p>
+    </section>
+
+    <section class="settings-block">
+      <h4>Горячие клавиши</h4>
+      <p class="muted">На компьютере: <b>N</b> — работа, <b>P</b> — оплата, <b>C</b> — клиент, <b>T</b> — таймер, <b>/</b> — поиск.</p>
     </section>
 
     <section class="settings-block">
@@ -484,14 +863,18 @@
 
     <section class="settings-block">
       <h4>Данные</h4>
+      <p class="muted" id="backupStatus">Бэкап ещё не делали.</p>
       <div class="settings-actions">
         <button class="btn btn-sm" type="button" data-action="backup">Скачать бэкап</button>
         <button class="btn btn-sm" type="button" data-action="import">Импорт бэкапа</button>
         <button class="btn btn-sm" type="button" data-action="csv-works">Работы в CSV</button>
         <button class="btn btn-sm" type="button" data-action="csv-payments">Оплаты в CSV</button>
+        <button class="btn btn-sm" type="button" data-action="csv-expenses">Расходы в CSV</button>
         <button class="btn btn-sm" type="button" data-action="trash">Корзина <span class="badge badge-zero" id="trashCount">0</span></button>
       </div>
       <p class="hint">Всё хранится только на этом устройстве. Бэкап — единственный способ перенести данные на другое устройство.</p>
+      <p class="hint" id="storageStatus"></p>
+      <button class="btn btn-sm btn-ghost" type="button" id="persistBtn" hidden>Включить постоянное хранилище</button>
     </section>
 
     <section class="settings-block danger-zone">
@@ -500,7 +883,7 @@
       <p class="hint">Удаляет клиентов, работы, оплаты и корзину без возможности восстановления.</p>
     </section>
 
-    <p class="about">Фрил-Бух · версия <span id="appVersion">1.0.0</span> · данные на устройстве</p>
+    <p class="about">Фрил-Бух · версия <span id="appVersion">2.0.0</span> · данные на устройстве</p>
   </div>
 </div>
 
@@ -571,7 +954,8 @@
 </div>
 
 <input type="file" id="importFile" accept=".json,application/json" hidden />
-<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="print-area" id="printArea" aria-hidden="true"></div>
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 <noscript><p style="padding:24px;text-align:center">Для работы приложения нужен JavaScript.</p></noscript>
 
 <script src="js/db.js"></script>

@@ -1,12 +1,14 @@
 {
-  "name": "Фрил-Бух — учёт часов и оплат",
+  "name": "Фрил-Бух — часы, деньги и проекты",
   "short_name": "Фрил-Бух",
-  "description": "Простая бухгалтерия для фрилансера: клиенты, почасовка, оплаты и долги. Данные хранятся на устройстве.",
+  "description": "Бухгалтерия фрилансера: клиенты, проекты, часы, оплаты, расходы, счета и отчёты. Данные хранятся на устройстве.",
   "lang": "ru",
   "dir": "ltr",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
   "background_color": "#f4f6f5",
   "theme_color": "#f4f6f5",
@@ -16,5 +18,51 @@
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Новая работа",
+      "short_name": "Работа",
+      "description": "Записать часы",
+      "url": "./?action=new-work",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Таймер",
+      "short_name": "Таймер",
+      "description": "Запустить таймер",
+      "url": "./?action=timer",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Новый расход",
+      "short_name": "Расход",
+      "description": "Добавить расход",
+      "url": "./?action=new-expense",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Отчёты",
+      "short_name": "Отчёты",
+      "description": "Доходы и расходы",
+      "url": "./#reports",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshots/overview-390.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Обзор: заработок, оплаты и финансы"
+    },
+    {
+      "src": "screenshots/reports-1440.png",
+      "sizes": "1440x900",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Отчёты по месяцам и клиентам"
+    }
   ]
 }

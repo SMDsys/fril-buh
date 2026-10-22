@@ -1,5 +1,5 @@
 /* Офлайн-кэш приложения «Фрил-Бух». */
-const CACHE = 'frilbuh-v2';
+const CACHE = 'frilbuh-v3';
 const ASSETS = [
   './',
   './index.html',
