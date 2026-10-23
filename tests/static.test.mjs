@@ -52,9 +52,16 @@ test('manifest.webmanifest корректен и ссылается на сущ�
   for (const shot of manifest.screenshots) assert.ok(exists(shot.src), 'нет скриншота ' + shot.src);
 });
 
+test('Версия приложения согласована', () => {
+  const pkg = JSON.parse(read('package.json'));
+  assert.equal(pkg.version, '2.1.0');
+  assert.match(read('js/app.js'), /const VERSION = '2\.1\.0';/);
+  assert.match(read('index.html'), /<span id="appVersion">2\.1\.0<\/span>/);
+});
+
 test('Service worker кэширует актуальные файлы', () => {
   const sw = read('sw.js');
-  assert.match(sw, /const CACHE = 'frilbuh-v4';/);
+  assert.match(sw, /const CACHE = 'frilbuh-v5';/);
   const assets = [...sw.matchAll(/'\.\/([^']*)'/g)].map((m) => m[1]).filter(Boolean);
   for (const asset of assets) assert.ok(exists(asset), 'нет файла в кэше: ' + asset);
 });

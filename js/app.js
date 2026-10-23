@@ -53,8 +53,11 @@
   };
 
   /* ==================== Константы ==================== */
-  const VERSION = '2.0.0';
+  const VERSION = '2.1.0';
   const IDLE_LOCK_MS = 5 * 60 * 1000;
+  const TIME_FORMATS = ['minutes', 'hours'];
+  const ROUND_STEPS = [1, 5, 10, 15, 30];
+  const RATE_UNITS = ['hour', 'minute'];
   const BACKUP_DAYS = 7;
 
   const CATEGORIES = [
@@ -112,6 +115,9 @@
     trash: [],
     currency: 'RUB',
     themeMode: 'auto',
+    timeFormat: 'minutes',
+    roundStep: 10,
+    defaultRateUnit: 'hour',
     pin: null,
     taxRate: 0,
     myName: '',
@@ -162,8 +168,13 @@
   }
 
   function fmtHours(hours) {
-    const h = Math.round((Number(hours) || 0) * 100) / 100;
-    return h.toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' ч';
+    const total = Math.round((Number(hours) || 0) * 60);
+    if (!total) return '0 ч';
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    if (h && m) return h + ' ч ' + m + ' мин';
+    if (h) return h + ' ч';
+    return m + ' мин';
   }
 
   function fmtDate(iso) {
@@ -226,13 +237,40 @@
     return c ? c.name : 'Удалённый клиент';
   };
 
+  const rateUnitShort = (unit) => unit === 'minute' ? 'мин' : 'ч';
+  const rateUnitWord = (unit) => unit === 'minute' ? 'минуту' : 'час';
+  const clientRateUnit = (client) => client && client.rateUnit === 'minute' ? 'minute' : 'hour';
+  const clientRateText = (client) => client
+    ? fmtMoney(client.rate) + '/' + rateUnitShort(clientRateUnit(client))
+    : '—';
+
   function workRate(work) {
     if (typeof work.rate === 'number' && Number.isFinite(work.rate)) return work.rate;
     const c = clientById(work.clientId);
     return c ? num(c.rate) : 0;
   }
 
-  const workAmount = (work) => round2((Number(work.hours) || 0) * workRate(work));
+  function workRateUnit(work) {
+    if (work.rateUnit === 'minute' || work.rateUnit === 'hour') return work.rateUnit;
+    if (typeof work.rate === 'number' && Number.isFinite(work.rate)) return 'hour';
+    return clientRateUnit(clientById(work.clientId));
+  }
+
+  function workMinutes(work) {
+    const own = Number(work && work.minutes);
+    if (Number.isFinite(own) && own > 0) return Math.round(own);
+    return Math.round((Number(work && work.hours) || 0) * 60);
+  }
+
+  const workHours = (work) => workMinutes(work) / 60;
+
+  function amountForMinutes(minutes, rate, unit) {
+    const m = Math.max(0, Number(minutes) || 0);
+    const r = num(rate);
+    return round2(unit === 'minute' ? m * r : (m / 60) * r);
+  }
+
+  const workAmount = (work) => amountForMinutes(workMinutes(work), workRate(work), workRateUnit(work));
 
   const projectById = (id) => state.projects.find((p) => p.id === id) || null;
   const projectsForClient = (clientId) => state.projects.filter((p) => p.clientId === clientId);
@@ -243,6 +281,63 @@
     return !!(p && p.type === 'fixed');
   };
   const workBilledAmount = (work) => isFixedWork(work) ? 0 : workAmount(work);
+
+  function roundStepMinutes() {
+    const step = Number(state.roundStep);
+    return ROUND_STEPS.includes(step) ? step : 10;
+  }
+
+  function usesMinutes() {
+    return state.timeFormat !== 'hours';
+  }
+
+  function inputToMinutes(value) {
+    const v = num(value);
+    return Math.max(0, Math.round(usesMinutes() ? v : v * 60));
+  }
+
+  function minutesToInput(minutes) {
+    const m = Math.max(0, Math.round(Number(minutes) || 0));
+    return usesMinutes() ? String(m) : String(round2(m / 60));
+  }
+
+  function durationChipLabel(minutes) {
+    const m = Math.round(Number(minutes) || 0);
+    if (m >= 60 && m % 60 === 0) return (m / 60) + ' ч';
+    if (m > 60) return Math.floor(m / 60) + ' ч ' + (m % 60) + ' мин';
+    return m + ' мин';
+  }
+
+  function renderDurationChips() {
+    const box = $('#hoursChips');
+    if (!box) return;
+    const step = roundStepMinutes();
+    let presets;
+    if (step <= 5) presets = [5, 10, 15, 30, 60, 120];
+    else presets = [step, step * 2, step * 3, 60, 90, 120, 240];
+    const values = [...new Set(presets)]
+      .filter((m) => m > 0 && m % step === 0)
+      .sort((a, b) => a - b)
+      .slice(0, 6);
+    box.innerHTML = values.map((m) =>
+      '<button type="button" class="chip" data-minutes="' + m + '">' + durationChipLabel(m) + '</button>'
+    ).join('');
+  }
+
+  function applyDurationUI() {
+    const input = $('#workHours');
+    if (!input) return;
+    const minutes = usesMinutes();
+    if ($('#workDurationLabel')) $('#workDurationLabel').textContent = minutes ? 'Минуты *' : 'Часы *';
+    input.setAttribute('min', minutes ? '1' : '0.01');
+    input.setAttribute('step', minutes ? '1' : '0.01');
+    input.setAttribute('inputmode', 'decimal');
+    input.placeholder = minutes ? '60' : '1';
+    if ($('#workHoursErr')) {
+      $('#workHoursErr').textContent = minutes ? 'Укажите минуты больше нуля' : 'Укажите часы больше нуля';
+    }
+    renderDurationChips();
+  }
 
   function projectEarned(project) {
     if (!project) return 0;
@@ -255,7 +350,7 @@
   function projectHours(project) {
     return round2(state.works
       .filter((w) => w.projectId === project.id)
-      .reduce((sum, w) => sum + num(w.hours), 0));
+      .reduce((sum, w) => sum + workHours(w), 0));
   }
 
   function projectPaid(project) {
@@ -270,7 +365,7 @@
     state.works.forEach((w) => {
       const s = map.get(w.clientId);
       if (!s) return;
-      s.hours += num(w.hours);
+      s.hours += workHours(w);
       if (!isFixedWork(w)) s.earned += workAmount(w);
     });
     state.projects.forEach((p) => {
@@ -380,7 +475,7 @@
     const payments = state.payments.filter((p) => inPeriod(p.date, state.overviewPeriod));
     const earned = periodEarned(state.overviewPeriod);
     const paid = round2(payments.reduce((sum, p) => sum + num(p.amount), 0));
-    const hours = round2(works.reduce((sum, w) => sum + num(w.hours), 0));
+    const hours = round2(works.reduce((sum, w) => sum + workHours(w), 0));
     const expenses = periodExpenses(state.overviewPeriod);
     const tax = taxAmount(earned);
     const net = round2(earned - expenses - tax);
@@ -426,7 +521,7 @@
       ? debtors.slice(0, 4).map(({ client, stats: s }) => (
         '<button class="debtor-row" type="button" data-action="detail" data-id="' + esc(client.id) + '">' +
           '<span class="debtor-name"><strong>' + esc(client.name) + '</strong>' +
-            '<span>' + fmtHours(s.hours) + ' · ' + fmtMoney(client.rate) + '/ч</span></span>' +
+            '<span>' + fmtHours(s.hours) + ' · ' + clientRateText(client) + '</span></span>' +
           '<span class="debtor-sum">' + fmtMoney(Math.abs(s.balance)) + '</span>' +
         '</button>'
       )).join('')
@@ -441,7 +536,7 @@
         const cat = categoryById(w.category);
         return '<button class="debtor-row" type="button" data-action="edit-work" data-id="' + esc(w.id) + '">' +
           '<span class="debtor-name"><strong>' + esc(clientName(w.clientId)) + '</strong>' +
-            '<span>' + (cat ? esc(cat.label) : 'Без категории') + ' · ' + fmtDate(w.date) + ' · ' + fmtHours(w.hours) + '</span></span>' +
+            '<span>' + (cat ? esc(cat.label) : 'Без категории') + ' · ' + fmtDate(w.date) + ' · ' + fmtHours(workHours(w)) + '</span></span>' +
           '<span class="debtor-amount">' + (isFixedWork(w) ? 'фикс' : fmtMoney(workAmount(w))) + '</span>' +
         '</button>';
       }).join('')
@@ -456,7 +551,7 @@
       '<div class="client-top">' +
         '<button class="client-open" type="button" data-action="detail" data-id="' + esc(client.id) + '">' +
           '<span class="client-name">' + esc(client.name) + '</span>' +
-          '<span class="client-meta">' + fmtMoney(client.rate) + '/ч · ' + fmtHours(s.hours) + '</span>' +
+          '<span class="client-meta">' + clientRateText(client) + ' · ' + fmtHours(s.hours) + '</span>' +
         '</button>' +
         balanceBadge(s.balance) +
       '</div>' +
@@ -514,7 +609,7 @@
     empty.hidden = list.length > 0;
     $('#clientsEmptyText').textContent = state.clients.length
       ? 'Ничего не найдено — попробуйте изменить фильтр.'
-      : 'Клиентов пока нет. Добавьте первого — и можно вносить часы.';
+      : 'Клиентов пока нет. Добавьте первого — и можно вносить время.';
     const emptyBtn = $('.btn', empty);
     if (emptyBtn) emptyBtn.hidden = state.clients.length > 0;
   }
@@ -532,11 +627,11 @@
     }
     list.sort(sortByDateDesc);
 
-    const hours = round2(list.reduce((sum, w) => sum + num(w.hours), 0));
+    const hours = round2(list.reduce((sum, w) => sum + workHours(w), 0));
     const amount = round2(list.reduce((sum, w) => sum + workBilledAmount(w), 0));
     $('#worksSub').textContent = list.length
       ? list.length + ' ' + plural(list.length, ['работа', 'работы', 'работ']) + ' · ' + fmtHours(hours) + ' · ' + fmtMoney(amount)
-      : 'Почасовка по дням';
+      : 'Время по дням';
 
     const groups = new Map();
     list.forEach((w) => {
@@ -546,7 +641,7 @@
 
     let html = '';
     groups.forEach((items, date) => {
-      const dayHours = round2(items.reduce((sum, w) => sum + num(w.hours), 0));
+      const dayHours = round2(items.reduce((sum, w) => sum + workHours(w), 0));
       const dayAmount = round2(items.reduce((sum, w) => sum + workBilledAmount(w), 0));
       html += '<div class="day-group">' +
         '<div class="day-head"><span>' + esc(fmtDayLabel(date)) + '</span><span>' + fmtHours(dayHours) + ' · ' + fmtMoney(dayAmount) + '</span></div>' +
@@ -563,7 +658,7 @@
           return '<div class="work-row">' +
             '<div class="row-main"><strong>' + esc(clientName(w.clientId)) + '</strong>' +
               '<span class="row-sub">' + sub + '</span></div>' +
-            '<div class="row-meta"><b>' + fmtHours(w.hours) + '</b>' + (time ? '<span>' + esc(time) + '</span>' : '') + '</div>' +
+            '<div class="row-meta"><b>' + fmtHours(workHours(w)) + '</b>' + (time ? '<span>' + esc(time) + '</span>' : '') + '</div>' +
             '<div class="row-amount' + (fixed ? ' row-fixed' : '') + '">' + (fixed ? 'фикс' : fmtMoney(workAmount(w))) + '</div>' +
             '<div class="row-actions">' + copyBtn('duplicate-work', w.id, 'Повторить работу') + editBtn('edit-work', w.id, 'Редактировать работу') + trashBtn('delete-work', w.id, 'Удалить работу') + '</div>' +
           '</div>';
@@ -577,7 +672,7 @@
     empty.hidden = list.length > 0;
     $('#worksEmptyText').textContent = state.works.length
       ? 'Ничего не найдено — измените период или фильтр.'
-      : 'Работ пока нет. Внесите часы — сумма посчитается по ставке клиента.';
+      : 'Работ пока нет. Внесите время — сумма посчитается по ставке клиента.';
     const emptyBtn = $('.btn', empty);
     if (emptyBtn) emptyBtn.hidden = state.works.length > 0;
   }
@@ -713,13 +808,13 @@
     const tax = taxAmount(earned);
     const net = round2(earned - expenses - tax);
     const works = state.works.filter((w) => inPeriod(w.date, period));
-    const hours = round2(works.reduce((sum, w) => sum + num(w.hours), 0));
+    const hours = round2(works.reduce((sum, w) => sum + workHours(w), 0));
     const billableWorks = works.filter((w) => !isFixedWork(w));
-    const billableHours = round2(billableWorks.reduce((sum, w) => sum + num(w.hours), 0));
+    const billableHours = round2(billableWorks.reduce((sum, w) => sum + workHours(w), 0));
     const billableEarned = round2(billableWorks.reduce((sum, w) => sum + workAmount(w), 0));
     const avg = billableHours > 0 ? round2(billableEarned / billableHours) : 0;
     const periods = { month: 'этот месяц', prev: 'прошлый месяц', all: 'всё время' };
-    $('#reportsSub').textContent = 'Доходы, расходы и часы — ' + (periods[period] || periods.month);
+    $('#reportsSub').textContent = 'Доходы, расходы и время — ' + (periods[period] || periods.month);
 
     $('#reportSummary').innerHTML =
       '<div class="report-kpi"><span>Заработано</span><b>' + fmtMoney(earned) + '</b></div>' +
@@ -728,7 +823,7 @@
       '<div class="report-kpi"><span>Налог' + (state.taxRate > 0 ? ' ' + state.taxRate + '%' : '') + '</span><b class="neg">' + fmtMoney(tax) + '</b></div>' +
       '<div class="report-kpi"><span>Чистыми</span><b class="' + (net < 0 ? 'neg' : 'pos') + '">' + fmtMoney(net) + '</b></div>' +
       '<div class="report-kpi"><span>Средняя ставка</span><b>' + (avg ? fmtMoney(avg) + '/ч' : '—') + '</b></div>' +
-      '<div class="report-kpi"><span>Часы</span><b>' + fmtHours(hours) + '</b></div>';
+      '<div class="report-kpi"><span>Время</span><b>' + fmtHours(hours) + '</b></div>';
 
     const now = new Date();
     const months = [];
@@ -770,7 +865,7 @@
           fixedForPeriod.filter((p) => p.clientId === c.id).reduce((sum, p) => sum + num(p.budget), 0)
         );
         const cPaid = round2(payments.filter((p) => p.clientId === c.id).reduce((sum, p) => sum + num(p.amount), 0));
-        const cHours = round2(cw.reduce((sum, w) => sum + num(w.hours), 0));
+        const cHours = round2(cw.reduce((sum, w) => sum + workHours(w), 0));
         return { c, s: stats.get(c.id), earned: cEarned, paid: cPaid, hours: cHours };
       })
       .filter((row) => row.earned > 0 || row.paid > 0 || row.hours > 0)
@@ -797,7 +892,7 @@
         label: cat ? cat.label : 'Без категории', color: cat ? cat.color : '#64748b', hours: 0, amount: 0
       });
       const row = catMap.get(key);
-      row.hours += num(w.hours);
+      row.hours += workHours(w);
       row.amount += workAmount(w);
     });
     const fixedInPeriod = periodProjects(period);
@@ -854,13 +949,13 @@
     const paymentsTotal = round2(payments.reduce((sum, p) => sum + num(p.amount), 0));
 
     $('#detailTitle').textContent = client.name;
-    $('#detailRate').textContent = fmtMoney(client.rate) + '/ч · ' + fmtHours(stats.hours);
+    $('#detailRate').textContent = clientRateText(client) + ' · ' + fmtHours(stats.hours);
 
     const balanceClass = stats.balance < -0.005 ? 'neg' : stats.balance > 0.005 ? 'pos' : '';
     const balanceLabel = stats.balance < -0.005 ? 'Долг' : stats.balance > 0.005 ? 'Аванс' : 'Баланс';
 
     let html = '<div class="detail-stats">' +
-      '<div class="detail-stat"><span>Часы</span><b>' + fmtHours(stats.hours) + '</b></div>' +
+      '<div class="detail-stat"><span>Время</span><b>' + fmtHours(stats.hours) + '</b></div>' +
       '<div class="detail-stat"><span>Заработано</span><b>' + fmtMoney(stats.earned) + '</b></div>' +
       '<div class="detail-stat"><span>Оплачено</span><b>' + fmtMoney(stats.paid) + '</b></div>' +
       '<div class="detail-stat"><span>' + balanceLabel + '</span><b class="' + balanceClass + '">' + fmtMoney(Math.abs(stats.balance)) + '</b></div>' +
@@ -892,7 +987,7 @@
     html += '<section class="detail-section"><h4>Проекты <span>' + projects.length + '</span></h4>';
     html += projects.length
       ? projects.map((p) => {
-        const type = p.type === 'fixed' ? 'фикс' : 'почасовой';
+        const type = p.type === 'fixed' ? 'фикс' : 'по времени';
         const amount = p.type === 'fixed' ? fmtMoney(p.budget) : fmtMoney(projectEarned(p));
         return '<div class="detail-line detail-line-actions">' +
           '<span class="dl-main"><b>' + esc(p.name) + '</b> · ' + type +
@@ -910,7 +1005,7 @@
       ? works.slice(0, 8).map((w) => {
         const cat = categoryById(w.category);
         const project = projectById(w.projectId);
-        const label = fmtDate(w.date) + ' · ' + fmtHours(w.hours) +
+        const label = fmtDate(w.date) + ' · ' + fmtHours(workHours(w)) +
           (cat ? ' · ' + esc(cat.label) : '') +
           (project ? ' · ' + esc(project.name) : '') +
           (w.note ? ' · ' + esc(w.note) : '');
@@ -968,7 +1063,10 @@
     if ($('#settingTaxRate')) $('#settingTaxRate').value = state.taxRate || '';
     if ($('#settingMyName')) $('#settingMyName').value = state.myName || '';
     if ($('#settingMyDetails')) $('#settingMyDetails').value = state.myDetails || '';
-    if ($('#rateLabel')) $('#rateLabel').textContent = 'Ставка, ' + (CURRENCY_SYMBOL[state.currency] || '₽') + '/час *';
+    if ($('#settingTimeFormat')) $('#settingTimeFormat').value = usesMinutes() ? 'minutes' : 'hours';
+    if ($('#settingRoundStep')) $('#settingRoundStep').value = String(roundStepMinutes());
+    if ($('#settingDefaultRateUnit')) $('#settingDefaultRateUnit').value = state.defaultRateUnit;
+    updateClientRateLabel();
     if ($('#projectBudgetLabel')) {
       $('#projectBudgetLabel').textContent = 'Бюджет, ' + (CURRENCY_SYMBOL[state.currency] || '₽');
     }
@@ -1061,10 +1159,10 @@
         details = wc + ' ' + plural(wc, ['работа', 'работы', 'работ'])+ ' · ' + pc + ' ' + plural(pc, ['оплата', 'оплаты', 'оплат']);
       } else if (item.type === 'work') {
         title = '⏱ Работа: ' + esc(item.data.note || clientName(item.data.clientId));
-        details = clientName(item.data.clientId) + ' · ' + fmtDate(item.data.date) + ' · ' + fmtHours(item.data.hours);
+        details = clientName(item.data.clientId) + ' · ' + fmtDate(item.data.date) + ' · ' + fmtHours(workHours(item.data));
       } else if (item.type === 'project') {
         title = '📁 Проект: ' + esc(item.data.name);
-        details = clientName(item.data.clientId) + ' · ' + (item.data.type === 'fixed' ? fmtMoney(item.data.budget) : 'почасовой');
+        details = clientName(item.data.clientId) + ' · ' + (item.data.type === 'fixed' ? fmtMoney(item.data.budget) : 'по времени');
       } else if (item.type === 'expense') {
         const cat = expenseCategory(item.data.category);
         title = '🧾 Расход: ' + fmtMoney(item.data.amount);
@@ -1200,6 +1298,32 @@
   }
 
   /* ==================== Клиенты ==================== */
+  function updateClientRateLabel() {
+    const label = $('#rateLabel');
+    if (!label) return;
+    const select = $('#clientRateUnit');
+    const unit = select && select.value === 'minute' ? 'minute' : 'hour';
+    label.textContent = 'Ставка, ' + (CURRENCY_SYMBOL[state.currency] || '₽') + '/' + rateUnitShort(unit) + ' *';
+  }
+
+  function changeClientRateUnit() {
+    const select = $('#clientRateUnit');
+    if (!select) return;
+    const next = select.value === 'minute' ? 'minute' : 'hour';
+    const prev = select.dataset.prev === 'minute' ? 'minute' : 'hour';
+    if (prev !== next) {
+      const rate = num($('#clientRate').value);
+      if (rate > 0) {
+        let converted = round2(next === 'minute' ? rate / 60 : rate * 60);
+        const nearest = Math.round(converted);
+        if (Math.abs(converted - nearest) < 0.25) converted = nearest;
+        $('#clientRate').value = String(converted);
+      }
+    }
+    select.dataset.prev = next;
+    updateClientRateLabel();
+  }
+
   function openClient(id) {
     const form = $('#clientForm');
     form.reset();
@@ -1207,16 +1331,24 @@
     $('#clientId').value = '';
     $('#clientModalTitle').textContent = id ? 'Клиент' : 'Новый клиент';
     updateSettingsUI();
+    $('#clientRateUnit').value = id ? 'hour' : state.defaultRateUnit;
+    $('#clientRateUnit').dataset.prev = $('#clientRateUnit').value;
+    if (!id) {
+      $('#clientRate').value = state.defaultRateUnit === 'minute' ? '20' : '1000';
+    }
     if (id) {
       const c = clientById(id);
       if (!c) return;
       $('#clientId').value = c.id;
       $('#clientName').value = c.name;
       $('#clientRate').value = c.rate;
+      $('#clientRateUnit').value = clientRateUnit(c);
+      $('#clientRateUnit').dataset.prev = $('#clientRateUnit').value;
       $('#clientPhone').value = c.phone || '';
       $('#clientEmail').value = c.email || '';
       $('#clientNote').value = c.note || '';
     }
+    updateClientRateLabel();
     openModal('clientModal', true);
   }
 
@@ -1229,6 +1361,7 @@
     const name = $('#clientName').value.trim();
     const rateRaw = $('#clientRate').value.trim();
     const rate = num(rateRaw);
+    const rateUnit = $('#clientRateUnit').value === 'minute' ? 'minute' : 'hour';
     const email = $('#clientEmail').value.trim();
     const phone = $('#clientPhone').value.trim();
     const note = $('#clientNote').value.trim();
@@ -1254,6 +1387,7 @@
       id: id || uid(),
       name,
       rate: round2(rate),
+      rateUnit,
       email,
       phone,
       note,
@@ -1356,10 +1490,11 @@
     fillCategorySelect();
     form.reset();
     clearFormErrors(form);
+    applyDurationUI();
     state.editingWork = id || null;
     $('#workId').value = '';
     $('#workDate').value = todayISO();
-    $('#workHours').value = '1';
+    $('#workHours').value = minutesToInput(60);
     $('#workStart').value = '';
     $('#workEnd').value = '';
     $('#workCategory').value = '';
@@ -1376,7 +1511,7 @@
       fillClientSelect($('#workClient'), 'Выберите клиента', w.clientId);
       fillProjectSelect($('#workProject'), w.clientId, w.projectId, 'Без проекта');
       $('#workDate').value = w.date || todayISO();
-      $('#workHours').value = w.hours;
+      $('#workHours').value = minutesToInput(workMinutes(w));
       $('#workStart').value = w.start || '';
       $('#workEnd').value = w.end || '';
       $('#workCategory').value = w.category || '';
@@ -1393,12 +1528,16 @@
     if (!box) return;
     const cid = $('#workClient').value;
     const client = clientById(cid);
-    const hours = num($('#workHours').value);
+    const minutes = inputToMinutes($('#workHours').value);
     let rate = client ? num(client.rate) : 0;
+    let rateUnit = clientRateUnit(client);
 
     if (state.editingWork) {
       const w = state.works.find((item) => item.id === state.editingWork);
-      if (w && w.clientId === cid && typeof w.rate === 'number') rate = w.rate;
+      if (w && w.clientId === cid) {
+        if (typeof w.rate === 'number') rate = w.rate;
+        rateUnit = workRateUnit(w);
+      }
     }
 
     if (!cid) {
@@ -1410,13 +1549,15 @@
       box.textContent = 'Входит в фикс-проект «' + project.name + '» — сумма не меняется';
       return;
     }
-    box.textContent = 'К оплате: ' + fmtMoney(hours * rate) + (rate > 0 ? ' · ' + fmtMoney(rate) + '/ч' : '');
+    const amount = amountForMinutes(minutes, rate, rateUnit);
+    box.textContent = 'К оплате: ' + fmtMoney(amount) +
+      (rate > 0 ? ' · ' + fmtHours(minutes / 60) + ' × ' + fmtMoney(rate) + '/' + rateUnitShort(rateUnit) : '');
   }
 
   function markHourChips() {
-    const value = num($('#workHours').value);
+    const minutes = inputToMinutes($('#workHours').value);
     $$('#hoursChips .chip').forEach((chip) => {
-      chip.classList.toggle('is-active', num(chip.dataset.hours) === value);
+      chip.classList.toggle('is-active', Number(chip.dataset.minutes) === minutes);
     });
   }
 
@@ -1428,12 +1569,11 @@
     const [eh, em] = end.split(':').map(Number);
     const minutes = (eh * 60 + em) - (sh * 60 + sm);
     if (minutes <= 0) return;
-    const hours = Math.round(minutes / 15) / 4;
-    if (hours > 0) {
-      $('#workHours').value = String(hours);
-      markHourChips();
-      updateWorkPreview();
-    }
+    const step = roundStepMinutes();
+    const rounded = Math.max(step, Math.round(minutes / step) * step);
+    $('#workHours').value = minutesToInput(rounded);
+    markHourChips();
+    updateWorkPreview();
   }
 
   async function saveWork(event) {
@@ -1444,7 +1584,7 @@
     const id = $('#workId').value;
     const clientId = $('#workClient').value;
     const date = $('#workDate').value;
-    const hours = num($('#workHours').value);
+    const minutes = inputToMinutes($('#workHours').value);
     let valid = true;
 
     if (!clientId) {
@@ -1455,8 +1595,8 @@
       $('#workDate').classList.add('error');
       valid = false;
     }
-    if (!(hours > 0)) {
-      setFieldError('workHours', 'workHoursErr', 'Укажите часы больше нуля');
+    if (!(minutes > 0)) {
+      setFieldError('workHours', 'workHoursErr', usesMinutes() ? 'Укажите минуты больше нуля' : 'Укажите часы больше нуля');
       valid = false;
     }
     if (!valid) return;
@@ -1465,15 +1605,21 @@
     const old = id ? state.works.find((w) => w.id === id) : null;
     const project = projectById($('#workProject').value);
     let rate = client ? num(client.rate) : 0;
-    if (old && old.clientId === clientId && typeof old.rate === 'number') rate = old.rate;
+    let rateUnit = clientRateUnit(client);
+    if (old && old.clientId === clientId) {
+      if (typeof old.rate === 'number') rate = old.rate;
+      rateUnit = workRateUnit(old);
+    }
 
     const now = new Date().toISOString();
     const data = {
       id: id || uid(),
       clientId,
       date,
-      hours: round2(hours),
+      minutes,
+      hours: round2(minutes / 60),
       rate: round2(rate),
+      rateUnit,
       start: $('#workStart').value,
       end: $('#workEnd').value,
       projectId: $('#workProject').value,
@@ -1502,12 +1648,15 @@
     const client = clientById(source.clientId);
     if (!client) return;
     const now = new Date().toISOString();
+    const minutes = workMinutes(source);
     const data = {
       id: uid(),
       clientId: source.clientId,
       date: todayISO(),
-      hours: round2(num(source.hours)),
-      rate: round2(num(client.rate)),
+      minutes,
+      hours: round2(minutes / 60),
+      rate: round2(workRate(source)),
+      rateUnit: workRateUnit(source),
       start: '',
       end: '',
       projectId: source.projectId || '',
@@ -1536,7 +1685,7 @@
     if (!w) return;
     askConfirm({
       title: 'Удалить работу?',
-      text: '<b>' + esc(clientName(w.clientId)) + '</b>, ' + fmtDate(w.date) + ', ' + fmtHours(w.hours) +
+      text: '<b>' + esc(clientName(w.clientId)) + '</b>, ' + fmtDate(w.date) + ', ' + fmtHours(workHours(w)) +
         ' на ' + fmtMoney(workAmount(w)) + '. Запись переместится в корзину.',
       okLabel: 'Удалить',
       onOk: async () => {
@@ -1718,8 +1867,8 @@
     }
     if ($('#projectHint')) {
       $('#projectHint').textContent = fixed
-        ? 'Фиксированный проект добавляет бюджет в доход. Часы по нему идут только для статистики.'
-        : 'Почасовой проект считает доход по часам и ставке клиента.';
+        ? 'Фиксированный проект добавляет бюджет в доход. Время по нему идёт только для статистики.'
+        : 'Проект по времени считает доход по затраченному времени и ставке клиента — за час или за минуту.';
     }
   }
 
@@ -1920,7 +2069,7 @@
         const cat = categoryById(w.category);
         const project = projectById(w.projectId);
         const desc = [cat ? cat.label : '', project ? project.name : '', w.note || ''].filter(Boolean).join(' · ') || 'Работа';
-        lines.push({ date: w.date, desc, hours: round2(num(w.hours)), amount: workAmount(w) });
+        lines.push({ date: w.date, desc, minutes: workMinutes(w), hours: round2(workHours(w)), amount: workAmount(w) });
       });
     state.projects
       .filter((p) => p.clientId === clientId && p.type === 'fixed' && inPeriod(projectDate(p), period))
@@ -2020,7 +2169,7 @@
     const myName = state.myName || 'Фрил-Бух';
     const rows = (invoice.items || []).map((l) => (
       '<tr><td>' + fmtDate(l.date) + '</td><td>' + esc(l.desc) + '</td><td class="num">' +
-        (l.hours ? fmtHours(l.hours) : '—') + '</td><td class="num">' + fmtMoney(l.amount) + '</td></tr>'
+        (l.minutes ? fmtHours(l.minutes / 60) : (l.hours ? fmtHours(l.hours) : '—')) + '</td><td class="num">' + fmtMoney(l.amount) + '</td></tr>'
     )).join('');
     return '<div class="invoice-print">' +
       '<div class="invoice-print-head"><div><h1>Счёт ' + esc(invoice.number) + '</h1>' +
@@ -2030,7 +2179,7 @@
       '<div class="invoice-print-parties"><div><span>Исполнитель</span><b>' + esc(myName) + '</b></div>' +
         '<div><span>Клиент</span><b>' + esc(client ? client.name : 'Клиент') + '</b>' +
           (client && client.email ? '<p>' + esc(client.email) + '</p>' : '') + '</div></div>' +
-      '<table class="invoice-table"><thead><tr><th>Дата</th><th>Описание</th><th class="num">Часы</th><th class="num">Сумма</th></tr></thead>' +
+      '<table class="invoice-table"><thead><tr><th>Дата</th><th>Описание</th><th class="num">Время</th><th class="num">Сумма</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table>' +
       '<div class="invoice-total"><span>Итого</span><b>' + fmtMoney(invoice.total) + '</b></div>' +
       (invoice.note ? '<p class="invoice-note">' + esc(invoice.note) + '</p>' : '') +
@@ -2087,6 +2236,7 @@
     state.weekStart = toISO(base);
     fillClientSelect($('#weekClient'), 'Выберите клиента', state.worksClient || '');
     if ($('#weekClientErr')) $('#weekClientErr').hidden = true;
+    if ($('#weekHint')) $('#weekHint').textContent = 'Ввод в ' + (usesMinutes() ? 'минутах' : 'часах') + '. Время добавится отдельными записями — существующие записи не изменятся.';
     renderWeek();
     openModal('weekModal', true);
   }
@@ -2111,11 +2261,11 @@
       const date = addDays(start, i);
       const iso = toISO(date);
       const existing = clientId
-        ? round2(state.works.filter((w) => w.clientId === clientId && w.date === iso).reduce((sum, w) => sum + num(w.hours), 0))
+        ? round2(state.works.filter((w) => w.clientId === clientId && w.date === iso).reduce((sum, w) => sum + workHours(w), 0))
         : 0;
       return '<label class=\"week-day\">' +
         '<span class=\"week-day-name\">' + name + '<small>' + date.getDate() + '.' + pad(date.getMonth() + 1) + '</small></span>' +
-        '<input class=\"input week-input\" type=\"number\" min=\"0\" max=\"24\" step=\"0.25\" inputmode=\"decimal\" placeholder=\"0\" data-week-day=\"' + i + '\" data-date=\"' + iso + '\" />' +
+        '<input class=\"input week-input\" type=\"number\" min=\"0\" max=\"' + (usesMinutes() ? 1440 : 24) + '\" step=\"' + (usesMinutes() ? 1 : 0.01) + '\" inputmode=\"decimal\" placeholder=\"0\" data-week-day=\"' + i + '\" data-date=\"' + iso + '\" />' +
         (existing ? '<em class=\"week-existing\">уже ' + fmtHours(existing) + '</em>' : '') +
       '</label>';
     }).join('');
@@ -2125,12 +2275,12 @@
   function updateWeekPreview() {
     const client = clientById($('#weekClient') ? $('#weekClient').value : '');
     const rate = client ? num(client.rate) : 0;
-    let hours = 0;
-    $$('[data-week-day]').forEach((input) => { hours += num(input.value); });
-    hours = round2(hours);
+    const rateUnit = clientRateUnit(client);
+    let minutes = 0;
+    $$('[data-week-day]').forEach((input) => { minutes += inputToMinutes(input.value); });
     if ($('#weekPreview')) {
-      $('#weekPreview').textContent = fmtHours(hours) + ' · ' + fmtMoney(hours * rate) +
-        (rate > 0 ? ' · ' + fmtMoney(rate) + '/ч' : '');
+      $('#weekPreview').textContent = fmtHours(minutes / 60) + ' · ' + fmtMoney(amountForMinutes(minutes, rate, rateUnit)) +
+        (rate > 0 ? ' · ' + fmtMoney(rate) + '/' + rateUnitShort(rateUnit) : '');
     }
   }
 
@@ -2146,14 +2296,16 @@
     const now = new Date().toISOString();
     const rows = [];
     $$('[data-week-day]').forEach((input) => {
-      const hours = round2(num(input.value));
-      if (!(hours > 0)) return;
+      const minutes = Math.min(1440, inputToMinutes(input.value));
+      if (!(minutes > 0)) return;
       rows.push({
         id: uid(),
         clientId,
         date: input.dataset.date,
-        hours: Math.min(24, hours),
+        minutes,
+        hours: round2(minutes / 60),
         rate: round2(num(client.rate)),
+        rateUnit: clientRateUnit(client),
         start: '',
         end: '',
         projectId: '',
@@ -2165,7 +2317,7 @@
       });
     });
     if (!rows.length) {
-      toast('Введите часы хотя бы за один день', 'error');
+      toast('Введите время хотя бы за один день', 'error');
       return;
     }
     try {
@@ -2176,7 +2328,7 @@
       toast('Добавлено ' + rows.length + ' ' + plural(rows.length, ['запись', 'записи', 'записей']), 'ok');
     } catch (e) {
       console.error(e);
-      toast('Не удалось добавить часы', 'error');
+      toast('Не удалось добавить время', 'error');
     }
   }
 
@@ -2274,8 +2426,8 @@
     if (!timer) return;
     const started = new Date(timer.startedAt);
     const now = new Date();
-    const minutes = Math.max(15, Math.round((now.getTime() - started.getTime()) / 60000 / 15) * 15);
-    const hours = round2(minutes / 60);
+    const step = roundStepMinutes();
+    const minutes = Math.min(1440, Math.max(step, Math.round((now.getTime() - started.getTime()) / 60000 / step) * step));
     state.timer = null;
     clearInterval(timerTicker);
     timerTicker = null;
@@ -2286,11 +2438,11 @@
     $('#workDate').value = toISO(started);
     $('#workStart').value = pad(started.getHours()) + ':' + pad(started.getMinutes());
     $('#workEnd').value = pad(now.getHours()) + ':' + pad(now.getMinutes());
-    $('#workHours').value = String(hours);
+    $('#workHours').value = minutesToInput(minutes);
     $('#workNote').value = timer.note || '';
     markHourChips();
     updateWorkPreview();
-    toast('Проверьте часы и сохраните');
+    toast('Проверьте время и сохраните');
   }
 
   /* ==================== Подтверждение ==================== */
@@ -2412,6 +2564,7 @@
     try {
       await DB.setMeta('currency', code);
       renderAll();
+      updateSettingsUI();
       toast('Валюта изменена. Суммы не пересчитываются.');
     } catch (e) {
       console.error(e);
@@ -2430,6 +2583,44 @@
     }
   }
 
+  async function changeTimeFormat(value) {
+    state.timeFormat = value === 'hours' ? 'hours' : 'minutes';
+    try {
+      await DB.setMeta('timeFormat', state.timeFormat);
+      applyDurationUI();
+      updateSettingsUI();
+      toast(state.timeFormat === 'minutes' ? 'Время вводится в минутах' : 'Время вводится в часах');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function changeRoundStep(value) {
+    const step = Number(value);
+    if (!ROUND_STEPS.includes(step)) return;
+    state.roundStep = step;
+    try {
+      await DB.setMeta('roundStep', step);
+      renderDurationChips();
+      markHourChips();
+      updateSettingsUI();
+      toast('Шаг округления: ' + step + ' мин');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function changeDefaultRateUnit(value) {
+    state.defaultRateUnit = value === 'minute' ? 'minute' : 'hour';
+    try {
+      await DB.setMeta('defaultRateUnit', state.defaultRateUnit);
+      updateSettingsUI();
+      toast(state.defaultRateUnit === 'minute' ? 'Новые клиенты — оплата за минуту' : 'Новые клиенты — оплата за час');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   async function saveProfile(key, value) {
     state[key] = str(value);
     try { await DB.setMeta(key, state[key]); } catch (e) { console.error(e); }
@@ -2438,7 +2629,7 @@
   function backupData() {
     const data = {
       app: 'fril-buh',
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       clients: state.clients,
       projects: state.projects,
@@ -2452,7 +2643,10 @@
         theme: state.themeMode,
         taxRate: state.taxRate,
         myName: state.myName,
-        myDetails: state.myDetails
+        myDetails: state.myDetails,
+        timeFormat: usesMinutes() ? 'minutes' : 'hours',
+        roundStep: roundStepMinutes(),
+        defaultRateUnit: state.defaultRateUnit
       }
     };
     downloadFile('fril-buh-backup-' + todayISO() + '.json', JSON.stringify(data, null, 2), 'application/json');
@@ -2474,7 +2668,10 @@
           theme: state.themeMode,
           taxRate: state.taxRate,
           myName: state.myName,
-          myDetails: state.myDetails
+          myDetails: state.myDetails,
+          timeFormat: usesMinutes() ? 'minutes' : 'hours',
+          roundStep: roundStepMinutes(),
+          defaultRateUnit: state.defaultRateUnit
         };
         if (state.pin) meta.pin = state.pin;
         await DB.replaceAll({
@@ -2516,6 +2713,7 @@
         id,
         name: str(c.name).trim() || 'Без имени',
         rate: round2(num(c.rate)),
+        rateUnit: c.rateUnit === 'minute' ? 'minute' : 'hour',
         phone: str(c.phone),
         email: str(c.email),
         note: str(c.note),
@@ -2547,22 +2745,27 @@
     });
 
     const works = arr(raw.works)
-      .filter((w) => w && typeof w === 'object' && clientIds.has(str(w.clientId)) && num(w.hours) > 0)
-      .map((w) => ({
-        id: str(w.id) || uid(),
-        clientId: str(w.clientId),
-        date: validISODate(w.date),
-        hours: round2(num(w.hours)),
-        rate: round2(num(w.rate)),
-        start: str(w.start),
-        end: str(w.end),
-        projectId: projectIds.has(str(w.projectId)) ? str(w.projectId) : '',
-        billable: w.billable !== false,
-        category: categoryById(str(w.category)) ? str(w.category) : '',
-        note: str(w.note),
-        createdAt: w.createdAt || now,
-        updatedAt: w.updatedAt || now
-      }));
+      .filter((w) => w && typeof w === 'object' && clientIds.has(str(w.clientId)) && (num(w.minutes) > 0 || num(w.hours) > 0))
+      .map((w) => {
+        const minutes = Math.round(num(w.minutes) > 0 ? num(w.minutes) : num(w.hours) * 60);
+        return {
+          id: str(w.id) || uid(),
+          clientId: str(w.clientId),
+          date: validISODate(w.date),
+          minutes,
+          hours: round2(minutes / 60),
+          rate: round2(num(w.rate)),
+          rateUnit: w.rateUnit === 'minute' ? 'minute' : 'hour',
+          start: str(w.start),
+          end: str(w.end),
+          projectId: projectIds.has(str(w.projectId)) ? str(w.projectId) : '',
+          billable: w.billable !== false,
+          category: categoryById(str(w.category)) ? str(w.category) : '',
+          note: str(w.note),
+          createdAt: w.createdAt || now,
+          updatedAt: w.updatedAt || now
+        };
+      });
 
     const payments = arr(raw.payments)
       .filter((p) => p && typeof p === 'object' && clientIds.has(str(p.clientId)) && num(p.amount) > 0)
@@ -2595,12 +2798,16 @@
       .map((i) => {
         const items = arr(i.items)
           .filter((line) => line && typeof line === 'object')
-          .map((line) => ({
-            date: validISODate(line.date),
-            desc: str(line.desc) || 'Работа',
-            hours: round2(num(line.hours)),
-            amount: round2(num(line.amount))
-          }));
+          .map((line) => {
+            const minutes = Math.round(num(line.minutes) > 0 ? num(line.minutes) : num(line.hours) * 60);
+            return {
+              date: validISODate(line.date),
+              desc: str(line.desc) || 'Работа',
+              minutes,
+              hours: round2(minutes / 60),
+              amount: round2(num(line.amount))
+            };
+          });
         const total = round2(items.reduce((sum, line) => sum + num(line.amount), 0) || num(i.total));
         return {
           id: str(i.id) || uid(),
@@ -2633,6 +2840,15 @@
     const currency = CURRENCIES.includes(str(settings.currency)) ? str(settings.currency) : state.currency;
     const theme = ['auto', 'light', 'dark'].includes(str(settings.theme)) ? str(settings.theme) : state.themeMode;
     const taxRate = Math.min(50, Math.max(0, num(settings.taxRate)));
+    const timeFormat = TIME_FORMATS.includes(str(settings.timeFormat))
+      ? str(settings.timeFormat)
+      : (usesMinutes() ? 'minutes' : 'hours');
+    const roundStep = ROUND_STEPS.includes(Number(settings.roundStep))
+      ? Number(settings.roundStep)
+      : roundStepMinutes();
+    const defaultRateUnit = RATE_UNITS.includes(str(settings.defaultRateUnit))
+      ? str(settings.defaultRateUnit)
+      : state.defaultRateUnit;
 
     return {
       clients, projects, works, payments, expenses, invoices, trash,
@@ -2641,7 +2857,10 @@
         theme,
         taxRate,
         myName: str(settings.myName),
-        myDetails: str(settings.myDetails)
+        myDetails: str(settings.myDetails),
+        timeFormat,
+        roundStep,
+        defaultRateUnit
       }
     };
   }
@@ -2653,7 +2872,10 @@
       theme: s.theme,
       taxRate: s.taxRate,
       myName: s.myName,
-      myDetails: s.myDetails
+      myDetails: s.myDetails,
+      timeFormat: s.timeFormat,
+      roundStep: s.roundStep,
+      defaultRateUnit: s.defaultRateUnit
     };
     if (state.pin) meta.pin = state.pin;
     if (state.lastBackupAt) meta.lastBackupAt = state.lastBackupAt;
@@ -2682,6 +2904,9 @@
     state.taxRate = s.taxRate;
     state.myName = s.myName;
     state.myDetails = s.myDetails;
+    state.timeFormat = s.timeFormat;
+    state.roundStep = s.roundStep;
+    state.defaultRateUnit = s.defaultRateUnit;
     state.timer = null;
     try { await DB.remove('meta', 'timer'); } catch (e) { /* уже нет */ }
     applyTheme();
@@ -2694,7 +2919,7 @@
     const pending = [];
     const clientIdMap = new Map();
     const projectIdMap = new Map();
-    const clientKey = (c) => str(c.name).trim().toLowerCase() + '|' + round2(num(c.rate));
+    const clientKey = (c) => str(c.name).trim().toLowerCase() + '|' + round2(num(c.rate)) + '|' + (c.rateUnit === 'minute' ? 'minute' : 'hour');
     const existingClients = new Map(state.clients.map((c) => [clientKey(c), c]));
 
     data.clients.forEach((c) => {
@@ -2734,8 +2959,8 @@
     data.works.forEach((w) => {
       const clientId = clientIdMap.get(w.clientId) || w.clientId;
       if (!clientById(clientId)) return;
-      const signature = [clientId, w.date, round2(num(w.hours)), str(w.note), w.category || ''].join('|');
-      const exists = state.works.some((x) => [x.clientId, x.date, round2(num(x.hours)), str(x.note), x.category || ''].join('|') === signature);
+      const signature = [clientId, w.date, workMinutes(w), round2(workRate(w)), workRateUnit(w), str(w.note), w.category || ''].join('|');
+      const exists = state.works.some((x) => [x.clientId, x.date, workMinutes(x), round2(workRate(x)), workRateUnit(x), str(x.note), x.category || ''].join('|') === signature);
       if (exists) return;
       const row = Object.assign({}, w, {
         id: state.works.some((x) => x.id === w.id) ? uid() : w.id,
@@ -2882,13 +3107,13 @@
   }
 
   function exportWorksCSV() {
-    const rows = [['Клиент', 'Дата', 'Часы', 'Ставка', 'Сумма', 'Категория', 'Проект', 'Начало', 'Конец', 'Описание']];
+    const rows = [['Клиент', 'Дата', 'Часы', 'Минуты', 'Ставка', 'Ставка за', 'Сумма', 'Категория', 'Проект', 'Начало', 'Конец', 'Описание']];
     state.works.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach((w) => {
       const cat = categoryById(w.category);
       const project = projectById(w.projectId);
       rows.push([
-        clientName(w.clientId), w.date, csvNum(w.hours), csvNum(workRate(w)), csvNum(workBilledAmount(w)),
-        cat ? cat.label : '', project ? project.name : '', w.start || '', w.end || '', w.note || ''
+        clientName(w.clientId), w.date, csvNum(workHours(w)), workMinutes(w), csvNum(workRate(w)), rateUnitWord(workRateUnit(w)),
+        csvNum(workBilledAmount(w)), cat ? cat.label : '', project ? project.name : '', w.start || '', w.end || '', w.note || ''
       ]);
     });
     downloadCSV('fril-buh-raboty-' + todayISO() + '.csv', rows);
@@ -3382,9 +3607,9 @@
     $('#confirmOk').addEventListener('click', runConfirm);
 
     $('#hoursChips').addEventListener('click', (event) => {
-      const btn = event.target.closest('[data-hours]');
+      const btn = event.target.closest('[data-minutes]');
       if (!btn) return;
-      $('#workHours').value = btn.dataset.hours;
+      $('#workHours').value = minutesToInput(Number(btn.dataset.minutes));
       markHourChips();
       updateWorkPreview();
     });
@@ -3403,8 +3628,12 @@
     $('#workStart').addEventListener('change', syncHoursFromTimes);
     $('#workEnd').addEventListener('change', syncHoursFromTimes);
 
+    $('#clientRateUnit').addEventListener('change', changeClientRateUnit);
     $('#settingCurrency').addEventListener('change', (event) => changeCurrency(event.target.value));
     $('#settingTheme').addEventListener('change', (event) => setThemeMode(event.target.value));
+    $('#settingTimeFormat').addEventListener('change', (event) => changeTimeFormat(event.target.value));
+    $('#settingRoundStep').addEventListener('change', (event) => changeRoundStep(event.target.value));
+    $('#settingDefaultRateUnit').addEventListener('change', (event) => changeDefaultRateUnit(event.target.value));
     $('#settingTaxRate').addEventListener('change', (event) => changeTaxRate(event.target.value));
     $('#settingMyName').addEventListener('change', (event) => saveProfile('myName', event.target.value));
     $('#settingMyDetails').addEventListener('change', (event) => saveProfile('myDetails', event.target.value));
@@ -3509,6 +3738,9 @@
       state.taxRate = Math.min(50, Math.max(0, num(meta.taxRate)));
       state.myName = str(meta.myName);
       state.myDetails = str(meta.myDetails);
+      state.timeFormat = TIME_FORMATS.includes(meta.timeFormat) ? meta.timeFormat : 'minutes';
+      state.roundStep = ROUND_STEPS.includes(Number(meta.roundStep)) ? Number(meta.roundStep) : 10;
+      state.defaultRateUnit = RATE_UNITS.includes(meta.defaultRateUnit) ? meta.defaultRateUnit : 'hour';
       state.lastBackupAt = str(meta.lastBackupAt);
       state.backupSnoozeUntil = str(meta.backupSnoozeUntil);
       state.timer = meta.timer && meta.timer.clientId && meta.timer.startedAt ? meta.timer : null;

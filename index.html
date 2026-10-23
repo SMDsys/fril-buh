@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Фрил-Бух — бухгалтерия для фрилансеров</title>
-  <meta name="description" content="Простая бухгалтерия для фрилансера: клиенты, проекты, часы, оплаты, расходы и отчёты. Данные хранятся на устройстве." />
+  <meta name="description" content="Простая бухгалтерия для фрилансера: клиенты, проекты, время, оплаты, расходы и отчёты. Данные хранятся на устройстве." />
   <meta name="theme-color" content="#f4f6f5" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -103,7 +103,7 @@
           <span class="stat-hint" id="statDebtHint">Должников: 0</span>
         </article>
         <article class="stat">
-          <span class="stat-label">Часы</span>
+          <span class="stat-label">Время</span>
           <strong class="stat-value" id="statHours">0</strong>
           <span class="stat-hint" id="statHoursHint">за период</span>
         </article>
@@ -142,7 +142,7 @@
       <div class="onboarding" id="onboarding" hidden>
         <div class="onboarding-art" aria-hidden="true">🗂</div>
         <h3>Начните с первого клиента</h3>
-        <p>Добавьте клиента со ставкой за час, затем вносите отработанные часы и оплаты. Баланс и долг посчитаются сами.</p>
+        <p>Добавьте клиента со ставкой за час или за минуту, затем вносите отработанное время и оплаты. Баланс и долг посчитаются сами.</p>
         <button class="btn btn-primary" type="button" data-action="new-client">Добавить клиента</button>
       </div>
 
@@ -228,7 +228,7 @@
       <div class="empty" id="worksEmpty" hidden>
         <div class="empty-art" aria-hidden="true">⏱</div>
         <p id="worksEmptyText">Работ пока нет</p>
-        <button class="btn btn-primary" type="button" data-action="new-work">Внести часы</button>
+        <button class="btn btn-primary" type="button" data-action="new-work">Внести время</button>
       </div>
     </section>
 
@@ -279,7 +279,7 @@
       <div class="view-head">
         <div>
           <h2>Отчёты</h2>
-          <p class="muted" id="reportsSub">Доходы, расходы и часы</p>
+          <p class="muted" id="reportsSub">Доходы, расходы и время</p>
         </div>
         <div class="chips" id="reportsPeriod" role="group" aria-label="Период отчёта">
           <button type="button" class="chip" data-period="month">Месяц</button>
@@ -359,19 +359,29 @@
       <div class="grid-2">
         <label class="field">
           <span id="rateLabel">Ставка, ₽/час *</span>
-          <input class="input" id="clientRate" type="number" min="0" step="50" value="1000" inputmode="decimal" />
+          <input class="input" id="clientRate" type="number" min="0" step="any" value="1000" inputmode="decimal" />
           <em class="err" id="clientRateErr" hidden>Укажите ставку</em>
         </label>
+        <label class="field">
+          <span>Ставка за</span>
+          <select class="input" id="clientRateUnit">
+            <option value="hour">За час</option>
+            <option value="minute">За минуту</option>
+          </select>
+        </label>
+      </div>
+      <div class="grid-2">
         <label class="field">
           <span>Телефон</span>
           <input class="input" id="clientPhone" type="tel" autocomplete="off" placeholder="+7 900 000-00-00" />
         </label>
+        <label class="field">
+          <span>Email</span>
+          <input class="input" id="clientEmail" type="email" autocomplete="off" placeholder="mail@example.com" />
+          <em class="err" id="clientEmailErr" hidden>Проверьте адрес</em>
+        </label>
       </div>
-      <label class="field">
-        <span>Email</span>
-        <input class="input" id="clientEmail" type="email" autocomplete="off" placeholder="mail@example.com" />
-        <em class="err" id="clientEmailErr" hidden>Проверьте адрес</em>
-      </label>
+      <p class="hint">Фиксированная оплата задаётся в проекте клиента.</p>
       <label class="field">
         <span>Заметка</span>
         <textarea class="input" id="clientNote" rows="3" placeholder="Договорённости, особенности, реквизиты"></textarea>
@@ -415,19 +425,12 @@
       </label>
 
       <div class="field">
-        <span>Часы *</span>
+        <span id="workDurationLabel">Время *</span>
         <div class="hours-row">
-          <input class="input" id="workHours" type="number" min="0.25" step="0.25" value="1" inputmode="decimal" />
-          <div class="chips sm" id="hoursChips">
-            <button type="button" class="chip" data-hours="1">1</button>
-            <button type="button" class="chip" data-hours="2">2</button>
-            <button type="button" class="chip" data-hours="3">3</button>
-            <button type="button" class="chip" data-hours="4">4</button>
-            <button type="button" class="chip" data-hours="6">6</button>
-            <button type="button" class="chip" data-hours="8">8</button>
-          </div>
+          <input class="input" id="workHours" type="number" min="1" step="1" value="60" inputmode="decimal" />
+          <div class="chips sm" id="hoursChips"></div>
         </div>
-        <em class="err" id="workHoursErr" hidden>Укажите часы (шаг 15 минут)</em>
+        <em class="err" id="workHoursErr" hidden>Укажите время больше нуля</em>
       </div>
 
       <div class="grid-2">
@@ -528,7 +531,7 @@
       <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
     </div>
     <div id="timerIdle">
-      <p class="muted timer-hint">Запустите таймер перед работой. Когда закончите, часы подставятся в новую запись.</p>
+      <p class="muted timer-hint">Запустите таймер перед работой. Когда закончите, время подставится в новую запись.</p>
       <form id="timerForm">
         <label class="field">
           <span>Клиент *</span>
@@ -563,7 +566,7 @@
 <div class="modal" id="weekModal" aria-hidden="true">
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="weekModalTitle">
     <div class="modal-head">
-      <h3 id="weekModalTitle">Часы за неделю</h3>
+      <h3 id="weekModalTitle">Время за неделю</h3>
       <button class="icon-btn" type="button" data-close aria-label="Закрыть">&times;</button>
     </div>
     <form id="weekForm">
@@ -580,8 +583,8 @@
         <button class="icon-btn sm" type="button" data-week="1" aria-label="Следующая неделя">›</button>
       </div>
       <div class="week-grid" id="weekDays"></div>
-      <div class="amount-preview" id="weekPreview">0 ч · 0 ₽</div>
-      <p class="hint">Часы добавятся отдельными записями. Уже существующие записи не изменятся.</p>
+      <div class="amount-preview" id="weekPreview">0 мин · 0 ₽</div>
+      <p class="hint" id="weekHint">Время добавится отдельными записями. Уже существующие записи не изменятся.</p>
       <div class="modal-actions">
         <button class="btn btn-ghost" type="button" data-close>Отмена</button>
         <button class="btn btn-primary" type="submit">Добавить</button>
@@ -615,7 +618,7 @@
         <label class="field">
           <span>Тип</span>
           <select class="input" id="projectType">
-            <option value="hourly">Почасовая</option>
+            <option value="hourly">По времени</option>
             <option value="fixed">Фиксированная сумма</option>
           </select>
         </label>
@@ -648,7 +651,7 @@
           <input class="input" id="projectNote" autocomplete="off" placeholder="Необязательно" />
         </label>
       </div>
-      <p class="hint" id="projectHint">В почасовом проекте сумма считается по часам. В фиксированном — по бюджету, часы идут только для статистики.</p>
+      <p class="hint" id="projectHint">В проекте по времени сумма считается по затраченному времени и ставке клиента. В фиксированном — по бюджету, время идёт только для статистики.</p>
       <div class="modal-actions">
         <button class="btn btn-ghost" type="button" data-close>Отмена</button>
         <button class="btn btn-primary" type="submit">Сохранить</button>
@@ -827,6 +830,37 @@
     </section>
 
     <section class="settings-block">
+      <h4>Учёт времени и оплаты</h4>
+      <div class="grid-2">
+        <label class="field">
+          <span>Ввод времени</span>
+          <select class="input" id="settingTimeFormat">
+            <option value="minutes">Минуты (10)</option>
+            <option value="hours">Часы (0,25)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Шаг округления</span>
+          <select class="input" id="settingRoundStep">
+            <option value="1">1 минута</option>
+            <option value="5">5 минут</option>
+            <option value="10">10 минут</option>
+            <option value="15">15 минут</option>
+            <option value="30">30 минут</option>
+          </select>
+        </label>
+      </div>
+      <label class="field">
+        <span>Ставка новых клиентов</span>
+        <select class="input" id="settingDefaultRateUnit">
+          <option value="hour">За час</option>
+          <option value="minute">За минуту</option>
+        </select>
+      </label>
+      <p class="hint">Формат меняет только ввод. В списках время показывается как «10 мин» или «1 ч 15 мин». Фиксированная сумма задаётся в проекте.</p>
+    </section>
+
+    <section class="settings-block">
       <h4>Для счетов и налогов</h4>
       <div class="grid-2">
         <label class="field">
@@ -883,7 +917,7 @@
       <p class="hint">Удаляет клиентов, работы, оплаты и корзину без возможности восстановления.</p>
     </section>
 
-    <p class="about">Фрил-Бух · версия <span id="appVersion">2.0.0</span> · данные на устройстве</p>
+    <p class="about">Фрил-Бух · версия <span id="appVersion">2.1.0</span> · данные на устройстве</p>
   </div>
 </div>
 
