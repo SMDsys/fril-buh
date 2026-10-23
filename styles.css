@@ -938,6 +938,7 @@ html[data-lock-pending="1"] #lockScreen[hidden] { display: flex !important; }
 }
 
 @media (max-width: 559px) {
+  .brand-text span { font-size: 10.5px; line-height: 1.15; white-space: normal; overflow: visible; text-overflow: clip; }
   .view-head { align-items: flex-start; }
   .view-head-actions { gap: 4px; }
   .view-head-actions .btn { padding-inline: 10px; }

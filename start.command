@@ -5,7 +5,7 @@ PORT=4174
 
 IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "")
 
-printf '\n  Фрил-Бух — часы, деньги и проекты\n\n'
+printf '\n  Фрил-Бух — бухгалтерия для фрилансеров\n\n'
 printf '  На этом Mac:  http://localhost:%s\n' "$PORT"
 if [ -n "$IP" ]; then
   printf '  На телефоне:  http://%s:%s  (в той же Wi-Fi сети)\n' "$IP" "$PORT"

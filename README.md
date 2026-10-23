@@ -98,7 +98,7 @@ styles.css            оформление, темы, мобильная вёр�
 js/db.js              IndexedDB + запасной localStorage
 js/app.js             логика: расчёты, экраны, формы, PIN, бэкапы
 manifest.webmanifest  установка на телефон, ярлыки и скриншоты
-sw.js                 офлайн-кэш (frilbuh-v3)
+sw.js                 офлайн-кэш (frilbuh-v4)
 icons/                иконки приложения
 screenshots/          скриншоты для manifest
 tests/                статические проверки

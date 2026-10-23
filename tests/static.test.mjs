@@ -54,7 +54,7 @@ test('manifest.webmanifest корректен и ссылается на сущ�
 
 test('Service worker кэширует актуальные файлы', () => {
   const sw = read('sw.js');
-  assert.match(sw, /const CACHE = 'frilbuh-v3';/);
+  assert.match(sw, /const CACHE = 'frilbuh-v4';/);
   const assets = [...sw.matchAll(/'\.\/([^']*)'/g)].map((m) => m[1]).filter(Boolean);
   for (const asset of assets) assert.ok(exists(asset), 'нет файла в кэше: ' + asset);
 });
