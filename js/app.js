@@ -53,11 +53,13 @@
   };
 
   /* ==================== Константы ==================== */
-  const VERSION = '2.1.0';
+  const VERSION = '2.2.0';
   const IDLE_LOCK_MS = 5 * 60 * 1000;
   const TIME_FORMATS = ['minutes', 'hours'];
   const ROUND_STEPS = [1, 5, 10, 15, 30];
   const RATE_UNITS = ['hour', 'minute'];
+  const BILLING_STEPS = [0, 5, 10, 15, 30, 60];
+  const MIN_BILL_MINUTES = [0, 15, 30, 45, 60, 90, 120];
   const BACKUP_DAYS = 7;
 
   const CATEGORIES = [
@@ -81,6 +83,7 @@
   const INVOICE_STATUS = {
     draft: 'Черновик',
     sent: 'Выставлен',
+    partial: 'Частично оплачен',
     paid: 'Оплачен'
   };
 
@@ -101,7 +104,8 @@
     phone: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.9a2 2 0 0 1-.5 2.1L8 10a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.9.6 2.9.7a2 2 0 0 1 1.7 2z"/></svg>',
     mail: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="19" height="15" rx="2.4"/><path d="m3 6 9 7 9-7"/></svg>',
     copy: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-    print: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7" rx="1"/></svg>'
+    print: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7" rx="1"/></svg>',
+    card: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>'
   };
 
   /* ==================== Состояние ==================== */
@@ -244,6 +248,35 @@
     ? fmtMoney(client.rate) + '/' + rateUnitShort(clientRateUnit(client))
     : '—';
 
+  function clientBillingStep(client) {
+    const step = Number(client && client.billingStep);
+    return BILLING_STEPS.includes(step) ? step : 0;
+  }
+
+  function clientMinBillMinutes(client) {
+    const min = Number(client && client.minBillMinutes);
+    return MIN_BILL_MINUTES.includes(min) ? min : 0;
+  }
+
+  function billableMinutes(actualMinutes, step, minMinutes) {
+    const actual = Math.max(0, Math.round(Number(actualMinutes) || 0));
+    const rounding = BILLING_STEPS.includes(Number(step)) ? Number(step) : 0;
+    const minimum = MIN_BILL_MINUTES.includes(Number(minMinutes)) ? Number(minMinutes) : 0;
+    let billed = actual;
+    if (rounding > 0) billed = Math.ceil(actual / rounding) * rounding;
+    if (minimum > 0) billed = Math.max(billed, minimum);
+    return billed;
+  }
+
+  function clientBillingText(client) {
+    const parts = [];
+    const min = clientMinBillMinutes(client);
+    const step = clientBillingStep(client);
+    if (min > 0) parts.push('минимум ' + fmtHours(min / 60));
+    if (step > 0) parts.push('округление до ' + step + ' мин');
+    return parts.join(' · ');
+  }
+
   function workRate(work) {
     if (typeof work.rate === 'number' && Number.isFinite(work.rate)) return work.rate;
     const c = clientById(work.clientId);
@@ -262,7 +295,24 @@
     return Math.round((Number(work && work.hours) || 0) * 60);
   }
 
+  function workBillingStep(work) {
+    const own = Number(work && work.billingStep);
+    return BILLING_STEPS.includes(own) ? own : 0;
+  }
+
+  function workMinBillMinutes(work) {
+    const own = Number(work && work.minBillMinutes);
+    return MIN_BILL_MINUTES.includes(own) ? own : 0;
+  }
+
+  function workBilledMinutes(work) {
+    const own = Number(work && work.billedMinutes);
+    if (Number.isFinite(own) && own > 0) return Math.round(own);
+    return workMinutes(work);
+  }
+
   const workHours = (work) => workMinutes(work) / 60;
+  const workBilledHours = (work) => workBilledMinutes(work) / 60;
 
   function amountForMinutes(minutes, rate, unit) {
     const m = Math.max(0, Number(minutes) || 0);
@@ -270,7 +320,7 @@
     return round2(unit === 'minute' ? m * r : (m / 60) * r);
   }
 
-  const workAmount = (work) => amountForMinutes(workMinutes(work), workRate(work), workRateUnit(work));
+  const workAmount = (work) => amountForMinutes(workBilledMinutes(work), workRate(work), workRateUnit(work));
 
   const projectById = (id) => state.projects.find((p) => p.id === id) || null;
   const projectsForClient = (clientId) => state.projects.filter((p) => p.clientId === clientId);
@@ -281,6 +331,53 @@
     return !!(p && p.type === 'fixed');
   };
   const workBilledAmount = (work) => isFixedWork(work) ? 0 : workAmount(work);
+
+  const invoiceKind = (doc) => doc && doc.kind === 'act' ? 'act' : 'invoice';
+  const invoiceById = (id) => state.invoices.find((doc) => doc.id === id) || null;
+
+  function invoicePaidAmount(invoice) {
+    if (!invoice) return 0;
+    return round2(state.payments
+      .filter((p) => p.invoiceId === invoice.id)
+      .reduce((sum, p) => sum + num(p.amount), 0));
+  }
+
+  function invoiceRemaining(invoice) {
+    if (!invoice) return 0;
+    const paid = invoicePaidAmount(invoice);
+    if (paid <= 0.005 && invoice.status === 'paid') return 0;
+    return round2(Math.max(0, num(invoice.total) - paid));
+  }
+
+  function invoiceDisplayStatus(invoice) {
+    if (!invoice) return 'draft';
+    const total = round2(num(invoice.total));
+    const paid = invoicePaidAmount(invoice);
+    if (total > 0.005) {
+      if (paid >= total - 0.005) return 'paid';
+      if (paid > 0.005) return 'partial';
+    }
+    return invoice.status || 'draft';
+  }
+
+  async function syncInvoiceStatus(invoiceId) {
+    if (!invoiceId) return;
+    const invoice = invoiceById(invoiceId);
+    if (!invoice || invoiceKind(invoice) !== 'invoice') return;
+    const total = round2(num(invoice.total));
+    const paid = invoicePaidAmount(invoice);
+    let next = invoice.status || 'draft';
+    if (total > 0.005) {
+      if (paid >= total - 0.005) next = 'paid';
+      else if (paid > 0.005) next = 'partial';
+      else if (next === 'paid' || next === 'partial') next = 'sent';
+    }
+    if (next !== invoice.status) {
+      invoice.status = next;
+      invoice.updatedAt = new Date().toISOString();
+      await DB.put('invoices', invoice);
+    }
+  }
 
   function roundStepMinutes() {
     const step = Number(state.roundStep);
@@ -450,6 +547,8 @@
     '<button class="icon-btn sm" type="button" data-action="' + action + '" data-id="' + esc(id) + '" aria-label="' + label + '" title="' + label + '">' + ICO.copy + '</button>';
   const printBtn = (action, id, label) =>
     '<button class="icon-btn sm" type="button" data-action="' + action + '" data-id="' + esc(id) + '" aria-label="' + label + '" title="' + label + '">' + ICO.print + '</button>';
+  const payBtn = (action, id, label) =>
+    '<button class="icon-btn sm" type="button" data-action="' + action + '" data-id="' + esc(id) + '" aria-label="' + label + '" title="' + label + '">' + ICO.card + '</button>';
   const trashBtn = (action, id, label) =>
     '<button class="icon-btn sm danger" type="button" data-action="' + action + '" data-id="' + esc(id) + '" aria-label="' + label + '" title="' + label + '">' + ICO.trash + '</button>';
 
@@ -551,7 +650,8 @@
       '<div class="client-top">' +
         '<button class="client-open" type="button" data-action="detail" data-id="' + esc(client.id) + '">' +
           '<span class="client-name">' + esc(client.name) + '</span>' +
-          '<span class="client-meta">' + clientRateText(client) + ' · ' + fmtHours(s.hours) + '</span>' +
+          '<span class="client-meta">' + clientRateText(client) + ' · ' + fmtHours(s.hours) +
+            (clientBillingText(client) ? ' · ' + clientBillingText(client) : '') + '</span>' +
         '</button>' +
         balanceBadge(s.balance) +
       '</div>' +
@@ -560,7 +660,7 @@
         '<span>Оплачено <b>' + fmtMoney(s.paid) + '</b></span>' +
       '</div>' +
       '<div class="client-actions">' +
-        '<button class="btn btn-sm btn-primary" type="button" data-action="client-work" data-id="' + esc(client.id) + '">+ Часы</button>' +
+        '<button class="btn btn-sm btn-primary" type="button" data-action="client-work" data-id="' + esc(client.id) + '">+ Время</button>' +
         '<button class="btn btn-sm" type="button" data-action="client-pay" data-id="' + esc(client.id) + '">Оплата</button>' +
         editBtn('edit-client', client.id, 'Редактировать клиента') +
         trashBtn('delete-client', client.id, 'Удалить клиента') +
@@ -628,9 +728,13 @@
     list.sort(sortByDateDesc);
 
     const hours = round2(list.reduce((sum, w) => sum + workHours(w), 0));
+    const billable = list.filter((w) => !isFixedWork(w));
+    const billableHours = round2(billable.reduce((sum, w) => sum + workHours(w), 0));
+    const billedHours = round2(billable.reduce((sum, w) => sum + workBilledHours(w), 0));
     const amount = round2(list.reduce((sum, w) => sum + workBilledAmount(w), 0));
     $('#worksSub').textContent = list.length
-      ? list.length + ' ' + plural(list.length, ['работа', 'работы', 'работ']) + ' · ' + fmtHours(hours) + ' · ' + fmtMoney(amount)
+      ? list.length + ' ' + plural(list.length, ['работа', 'работы', 'работ']) + ' · ' + fmtHours(hours) +
+        (billedHours !== billableHours ? ' · к оплате ' + fmtHours(billedHours) : '') + ' · ' + fmtMoney(amount)
       : 'Время по дням';
 
     const groups = new Map();
@@ -655,10 +759,13 @@
             (project ? ' · ' + esc(project.name) : '') +
             (w.note ? ' · ' + esc(w.note) : '');
           const time = timeRange(w.start, w.end);
+          const billedDiff = workBilledMinutes(w) !== workMinutes(w);
           return '<div class="work-row">' +
             '<div class="row-main"><strong>' + esc(clientName(w.clientId)) + '</strong>' +
               '<span class="row-sub">' + sub + '</span></div>' +
-            '<div class="row-meta"><b>' + fmtHours(workHours(w)) + '</b>' + (time ? '<span>' + esc(time) + '</span>' : '') + '</div>' +
+            '<div class="row-meta"><b>' + fmtHours(workHours(w)) + '</b>' +
+              (billedDiff && !fixed ? '<span class="row-billed">к оплате ' + fmtHours(workBilledHours(w)) + '</span>' : '') +
+              (time ? '<span>' + esc(time) + '</span>' : '') + '</div>' +
             '<div class="row-amount' + (fixed ? ' row-fixed' : '') + '">' + (fixed ? 'фикс' : fmtMoney(workAmount(w))) + '</div>' +
             '<div class="row-actions">' + copyBtn('duplicate-work', w.id, 'Повторить работу') + editBtn('edit-work', w.id, 'Редактировать работу') + trashBtn('delete-work', w.id, 'Удалить работу') + '</div>' +
           '</div>';
@@ -744,7 +851,8 @@
     if (q) {
       list = list.filter((p) => clientName(p.clientId).toLowerCase().includes(q) ||
         str(p.note).toLowerCase().includes(q) ||
-        str(METHODS[p.method] || '').toLowerCase().includes(q));
+        str(METHODS[p.method] || '').toLowerCase().includes(q) ||
+        str((invoiceById(p.invoiceId) || {}).number).toLowerCase().includes(q));
     }
     list.sort(sortByDateDesc);
 
@@ -759,7 +867,9 @@
     $('#moneyList').innerHTML = list.map((p) => {
       const method = METHODS[p.method] || 'Оплата';
       const project = projectById(p.projectId);
-      const sub = method + (project ? ' · ' + esc(project.name) : '') + (p.note ? ' · ' + esc(p.note) : '');
+      const invoice = invoiceById(p.invoiceId);
+      const sub = method + (invoice ? ' · ' + esc(invoice.number) : '') +
+        (project ? ' · ' + esc(project.name) : '') + (p.note ? ' · ' + esc(p.note) : '');
       return '<div class="money-row">' +
         '<div class="row-main"><strong>' + esc(clientName(p.clientId)) + '</strong>' +
           '<span class="row-sub">' + sub + '</span></div>' +
@@ -810,7 +920,7 @@
     const works = state.works.filter((w) => inPeriod(w.date, period));
     const hours = round2(works.reduce((sum, w) => sum + workHours(w), 0));
     const billableWorks = works.filter((w) => !isFixedWork(w));
-    const billableHours = round2(billableWorks.reduce((sum, w) => sum + workHours(w), 0));
+    const billableHours = round2(billableWorks.reduce((sum, w) => sum + workBilledHours(w), 0));
     const billableEarned = round2(billableWorks.reduce((sum, w) => sum + workAmount(w), 0));
     const avg = billableHours > 0 ? round2(billableEarned / billableHours) : 0;
     const periods = { month: 'этот месяц', prev: 'прошлый месяц', all: 'всё время' };
@@ -944,12 +1054,16 @@
     const works = state.works.filter((w) => w.clientId === client.id).sort(sortByDateDesc);
     const payments = state.payments.filter((p) => p.clientId === client.id).sort(sortByDateDesc);
     const projects = projectsForClient(client.id);
-    const invoices = state.invoices.filter((i) => i.clientId === client.id).sort(sortByDateDesc);
+    const documents = state.invoices.filter((i) => i.clientId === client.id).sort(sortByDateDesc);
+    const invoices = documents.filter((i) => invoiceKind(i) === 'invoice');
+    const acts = documents.filter((i) => invoiceKind(i) === 'act');
     const worksTotal = round2(works.reduce((sum, w) => sum + workBilledAmount(w), 0));
     const paymentsTotal = round2(payments.reduce((sum, p) => sum + num(p.amount), 0));
+    const billingText = clientBillingText(client);
 
     $('#detailTitle').textContent = client.name;
-    $('#detailRate').textContent = clientRateText(client) + ' · ' + fmtHours(stats.hours);
+    $('#detailRate').textContent = clientRateText(client) + ' · ' + fmtHours(stats.hours) +
+      (billingText ? ' · ' + billingText : '');
 
     const balanceClass = stats.balance < -0.005 ? 'neg' : stats.balance > 0.005 ? 'pos' : '';
     const balanceLabel = stats.balance < -0.005 ? 'Долг' : stats.balance > 0.005 ? 'Аванс' : 'Баланс';
@@ -980,6 +1094,7 @@
       '<button class="btn" type="button" data-action="client-pay" data-id="' + id + '">Оплата</button>' +
       '<button class="btn" type="button" data-action="new-project" data-id="' + id + '">Проект</button>' +
       '<button class="btn" type="button" data-action="new-invoice" data-id="' + id + '">Счёт</button>' +
+      '<button class="btn" type="button" data-action="new-act" data-id="' + id + '">Акт</button>' +
       '<button class="btn btn-ghost" type="button" data-action="edit-client" data-id="' + id + '">Редактировать</button>' +
       '<button class="btn btn-ghost danger-text" type="button" data-action="delete-client" data-id="' + id + '">Удалить</button>' +
     '</div>';
@@ -1005,7 +1120,9 @@
       ? works.slice(0, 8).map((w) => {
         const cat = categoryById(w.category);
         const project = projectById(w.projectId);
-        const label = fmtDate(w.date) + ' · ' + fmtHours(workHours(w)) +
+        const billed = workBilledMinutes(w) !== workMinutes(w) && !isFixedWork(w)
+          ? ' · к оплате ' + fmtHours(workBilledHours(w)) : '';
+        const label = fmtDate(w.date) + ' · ' + fmtHours(workHours(w)) + billed +
           (cat ? ' · ' + esc(cat.label) : '') +
           (project ? ' · ' + esc(project.name) : '') +
           (w.note ? ' · ' + esc(w.note) : '');
@@ -1019,7 +1136,9 @@
     html += payments.length
       ? payments.slice(0, 6).map((p) => {
         const project = projectById(p.projectId);
+        const invoice = invoiceById(p.invoiceId);
         const label = fmtDate(p.date) + ' · ' + esc(METHODS[p.method] || 'Оплата') +
+          (invoice ? ' · ' + esc(invoice.number) : '') +
           (project ? ' · ' + esc(project.name) : '') +
           (p.note ? ' · ' + esc(p.note) : '');
         return '<div class="detail-line"><span class="dl-main">' + label + '</span><span class="dl-sum pos">+' + fmtMoney(p.amount) + '</span></div>';
@@ -1029,16 +1148,33 @@
 
     html += '<section class="detail-section"><h4>Счета <span>' + invoices.length + '</span></h4>';
     html += invoices.length
-      ? invoices.map((inv) => (
-        '<div class="detail-line detail-line-actions">' +
-          '<span class="dl-main"><b>' + esc(inv.number) + '</b> · ' + fmtDate(inv.date) + ' · ' +
-            esc(INVOICE_STATUS[inv.status] || 'Черновик') + '</span>' +
+      ? invoices.map((inv) => {
+        const status = invoiceDisplayStatus(inv);
+        const remaining = invoiceRemaining(inv);
+        const statusText = INVOICE_STATUS[status] || 'Черновик';
+        return '<div class="detail-line detail-line-actions">' +
+          '<span class="dl-main"><b>' + esc(inv.number) + '</b> · ' + fmtDate(inv.date) + ' · ' + esc(statusText) +
+            (status === 'partial' ? ' · остаток ' + fmtMoney(remaining) : '') + '</span>' +
           '<span class="dl-sum">' + fmtMoney(inv.total) + '</span>' +
+          (remaining > 0.005 ? payBtn('pay-invoice', inv.id, 'Отметить оплату по счёту') : '') +
           printBtn('print-invoice', inv.id, 'Печать счёта') +
           trashBtn('delete-invoice', inv.id, 'Удалить счёт') +
+        '</div>';
+      }).join('')
+      : '<p class="detail-empty">Счетов пока нет.</p>';
+    html += '</section>';
+
+    html += '<section class="detail-section"><h4>Акты <span>' + acts.length + '</span></h4>';
+    html += acts.length
+      ? acts.map((act) => (
+        '<div class="detail-line detail-line-actions">' +
+          '<span class="dl-main"><b>' + esc(act.number) + '</b> · ' + fmtDate(act.date) + '</span>' +
+          '<span class="dl-sum">' + fmtMoney(act.total) + '</span>' +
+          printBtn('print-act', act.id, 'Печать акта') +
+          trashBtn('delete-invoice', act.id, 'Удалить акт') +
         '</div>'
       )).join('')
-      : '<p class="detail-empty">Счетов пока нет.</p>';
+      : '<p class="detail-empty">Актов пока нет.</p>';
     html += '</section>';
 
     $('#detailBody').innerHTML = html;
@@ -1168,7 +1304,8 @@
         title = '🧾 Расход: ' + fmtMoney(item.data.amount);
         details = fmtDate(item.data.date) + ' · ' + (cat ? cat.label : 'Другое');
       } else if (item.type === 'invoice') {
-        title = '📄 Счёт: ' + esc(item.data.number);
+        const isAct = invoiceKind(item.data) === 'act';
+        title = (isAct ? '📝 Акт: ' : '📄 Счёт: ') + esc(item.data.number);
         details = clientName(item.data.clientId) + ' · ' + fmtMoney(item.data.total);
       } else {
         title = '💰 Оплата: ' + fmtMoney(item.data.amount);
@@ -1333,6 +1470,8 @@
     updateSettingsUI();
     $('#clientRateUnit').value = id ? 'hour' : state.defaultRateUnit;
     $('#clientRateUnit').dataset.prev = $('#clientRateUnit').value;
+    $('#clientBillingStep').value = '0';
+    $('#clientMinBillMinutes').value = '0';
     if (!id) {
       $('#clientRate').value = state.defaultRateUnit === 'minute' ? '20' : '1000';
     }
@@ -1344,6 +1483,8 @@
       $('#clientRate').value = c.rate;
       $('#clientRateUnit').value = clientRateUnit(c);
       $('#clientRateUnit').dataset.prev = $('#clientRateUnit').value;
+      $('#clientBillingStep').value = String(clientBillingStep(c));
+      $('#clientMinBillMinutes').value = String(clientMinBillMinutes(c));
       $('#clientPhone').value = c.phone || '';
       $('#clientEmail').value = c.email || '';
       $('#clientNote').value = c.note || '';
@@ -1362,6 +1503,8 @@
     const rateRaw = $('#clientRate').value.trim();
     const rate = num(rateRaw);
     const rateUnit = $('#clientRateUnit').value === 'minute' ? 'minute' : 'hour';
+    const billingStep = Number($('#clientBillingStep').value);
+    const minBillMinutes = Number($('#clientMinBillMinutes').value);
     const email = $('#clientEmail').value.trim();
     const phone = $('#clientPhone').value.trim();
     const note = $('#clientNote').value.trim();
@@ -1388,6 +1531,8 @@
       name,
       rate: round2(rate),
       rateUnit,
+      billingStep: BILLING_STEPS.includes(billingStep) ? billingStep : 0,
+      minBillMinutes: MIN_BILL_MINUTES.includes(minBillMinutes) ? minBillMinutes : 0,
       email,
       phone,
       note,
@@ -1413,14 +1558,14 @@
     const works = state.works.filter((w) => w.clientId === id).length;
     const payments = state.payments.filter((p) => p.clientId === id).length;
     const projects = state.projects.filter((p) => p.clientId === id).length;
-    const invoices = state.invoices.filter((i) => i.clientId === id).length;
+    const documents = state.invoices.filter((i) => i.clientId === id).length;
     askConfirm({
       title: 'Удалить клиента?',
       text: '<b>' + esc(c.name) + '</b> и связанные записи (' + works + ' ' +
         plural(works, ['работа', 'работы', 'работ']) + ', ' + payments + ' ' +
         plural(payments, ['оплата', 'оплаты', 'оплат']) + ', ' + projects + ' ' +
-        plural(projects, ['проект', 'проекта', 'проектов']) + ', ' + invoices + ' ' +
-        plural(invoices, ['счёт', 'счёта', 'счетов']) + ') переместятся в корзину. Их можно вернуть.',
+        plural(projects, ['проект', 'проекта', 'проектов']) + ', ' + documents + ' ' +
+        plural(documents, ['документ', 'документа', 'документов']) + ') переместятся в корзину. Их можно вернуть.',
       okLabel: 'Удалить',
       onOk: () => removeClient(id)
     });
@@ -1531,12 +1676,16 @@
     const minutes = inputToMinutes($('#workHours').value);
     let rate = client ? num(client.rate) : 0;
     let rateUnit = clientRateUnit(client);
+    let billingStep = clientBillingStep(client);
+    let minBillMinutes = clientMinBillMinutes(client);
 
     if (state.editingWork) {
       const w = state.works.find((item) => item.id === state.editingWork);
       if (w && w.clientId === cid) {
         if (typeof w.rate === 'number') rate = w.rate;
         rateUnit = workRateUnit(w);
+        billingStep = workBillingStep(w);
+        minBillMinutes = workMinBillMinutes(w);
       }
     }
 
@@ -1549,9 +1698,15 @@
       box.textContent = 'Входит в фикс-проект «' + project.name + '» — сумма не меняется';
       return;
     }
-    const amount = amountForMinutes(minutes, rate, rateUnit);
+    if (!(minutes > 0)) {
+      box.textContent = 'Введите время, чтобы увидеть сумму';
+      return;
+    }
+    const billed = billableMinutes(minutes, billingStep, minBillMinutes);
+    const amount = amountForMinutes(billed, rate, rateUnit);
     box.textContent = 'К оплате: ' + fmtMoney(amount) +
-      (rate > 0 ? ' · ' + fmtHours(minutes / 60) + ' × ' + fmtMoney(rate) + '/' + rateUnitShort(rateUnit) : '');
+      (rate > 0 ? ' · ' + fmtHours(billed / 60) + (billed !== minutes ? ' (факт ' + fmtHours(minutes / 60) + ')' : '') +
+        ' × ' + fmtMoney(rate) + '/' + rateUnitShort(rateUnit) : '');
   }
 
   function markHourChips() {
@@ -1606,10 +1761,15 @@
     const project = projectById($('#workProject').value);
     let rate = client ? num(client.rate) : 0;
     let rateUnit = clientRateUnit(client);
+    let billingStep = clientBillingStep(client);
+    let minBillMinutes = clientMinBillMinutes(client);
     if (old && old.clientId === clientId) {
       if (typeof old.rate === 'number') rate = old.rate;
       rateUnit = workRateUnit(old);
+      billingStep = workBillingStep(old);
+      minBillMinutes = workMinBillMinutes(old);
     }
+    const billedMinutes = billableMinutes(minutes, billingStep, minBillMinutes);
 
     const now = new Date().toISOString();
     const data = {
@@ -1618,6 +1778,9 @@
       date,
       minutes,
       hours: round2(minutes / 60),
+      billedMinutes,
+      billingStep,
+      minBillMinutes,
       rate: round2(rate),
       rateUnit,
       start: $('#workStart').value,
@@ -1649,12 +1812,17 @@
     if (!client) return;
     const now = new Date().toISOString();
     const minutes = workMinutes(source);
+    const billingStep = workBillingStep(source);
+    const minBillMinutes = workMinBillMinutes(source);
     const data = {
       id: uid(),
       clientId: source.clientId,
       date: todayISO(),
       minutes,
       hours: round2(minutes / 60),
+      billedMinutes: billableMinutes(minutes, billingStep, minBillMinutes),
+      billingStep,
+      minBillMinutes,
       rate: round2(workRate(source)),
       rateUnit: workRateUnit(source),
       start: '',
@@ -1706,7 +1874,43 @@
   }
 
   /* ==================== Оплаты ==================== */
-  function openPayment(id, presetClientId) {
+  function fillInvoiceSelect(select, clientId, value, placeholder) {
+    if (!select) return;
+    const list = state.invoices
+      .filter((inv) => invoiceKind(inv) === 'invoice' && inv.clientId === clientId &&
+        (invoiceRemaining(inv) > 0.005 || inv.id === value))
+      .sort(sortByDateDesc);
+    const field = select.closest('.field');
+    if (field) field.hidden = !clientId || list.length === 0;
+    select.innerHTML = '<option value="">' + esc(placeholder || 'Без счёта') + '</option>' +
+      list.map((inv) => {
+        const remaining = invoiceRemaining(inv);
+        const label = remaining <= 0.005
+          ? inv.number + ' · оплачен'
+          : remaining < num(inv.total) - 0.005
+            ? inv.number + ' · остаток ' + fmtMoney(remaining)
+            : inv.number + ' · ' + fmtMoney(inv.total);
+        return '<option value="' + esc(inv.id) + '">' + esc(label) + '</option>';
+      }).join('');
+    select.value = value || '';
+    if (select.value !== (value || '')) select.value = '';
+    updatePaymentInvoiceHint();
+  }
+
+  function updatePaymentInvoiceHint() {
+    const hint = $('#paymentInvoiceHint');
+    if (!hint) return;
+    const invoice = invoiceById($('#paymentInvoice') ? $('#paymentInvoice').value : '');
+    if (!invoice) {
+      hint.hidden = true;
+      hint.textContent = '';
+      return;
+    }
+    hint.hidden = false;
+    hint.textContent = 'Остаток: ' + fmtMoney(invoiceRemaining(invoice));
+  }
+
+  function openPayment(id, presetClientId, presetInvoiceId) {
     if (!id && !ensureClient()) return;
     const form = $('#paymentForm');
     form.reset();
@@ -1719,6 +1923,7 @@
     $('#paymentModalTitle').textContent = id ? 'Оплата' : 'Новая оплата';
     fillClientSelect($('#paymentClient'), 'Выберите клиента', presetClientId || '');
     fillProjectSelect($('#paymentProject'), presetClientId || '', '', 'Без проекта');
+    fillInvoiceSelect($('#paymentInvoice'), presetClientId || '', '', 'Без счёта');
 
     if (id) {
       const p = state.payments.find((item) => item.id === id);
@@ -1726,10 +1931,17 @@
       $('#paymentId').value = p.id;
       fillClientSelect($('#paymentClient'), 'Выберите клиента', p.clientId);
       fillProjectSelect($('#paymentProject'), p.clientId, p.projectId, 'Без проекта');
+      fillInvoiceSelect($('#paymentInvoice'), p.clientId, p.invoiceId, 'Без счёта');
       $('#paymentAmount').value = p.amount;
       $('#paymentDate').value = p.date || todayISO();
       $('#paymentMethod').value = p.method || 'cash';
       $('#paymentNote').value = p.note || '';
+    } else if (presetInvoiceId) {
+      const invoice = invoiceById(presetInvoiceId);
+      if (invoice) {
+        fillInvoiceSelect($('#paymentInvoice'), invoice.clientId, invoice.id, 'Без счёта');
+        $('#paymentAmount').value = String(invoiceRemaining(invoice));
+      }
     } else if (presetClientId) {
       const stats = buildStats().get(presetClientId);
       if (stats && stats.balance < -0.005) {
@@ -1737,6 +1949,7 @@
       }
     }
 
+    updatePaymentInvoiceHint();
     openModal('paymentModal', true);
   }
 
@@ -1766,6 +1979,12 @@
     if (!valid) return;
 
     const old = id ? state.payments.find((p) => p.id === id) : null;
+    const invoiceId = $('#paymentInvoice') ? $('#paymentInvoice').value : '';
+    const linkedInvoice = invoiceId ? invoiceById(invoiceId) : null;
+    if (invoiceId && (!linkedInvoice || linkedInvoice.clientId !== clientId || invoiceKind(linkedInvoice) !== 'invoice')) {
+      toast('Счёт не найден у выбранного клиента', 'error');
+      return;
+    }
     const now = new Date().toISOString();
     const data = {
       id: id || uid(),
@@ -1774,6 +1993,7 @@
       date,
       method: $('#paymentMethod').value,
       projectId: $('#paymentProject').value,
+      invoiceId: linkedInvoice ? linkedInvoice.id : '',
       note: $('#paymentNote').value.trim(),
       createdAt: old && old.createdAt ? old.createdAt : now,
       updatedAt: now
@@ -1782,6 +2002,10 @@
     try {
       await DB.put('payments', data);
       upsertLocal('payments', data);
+      const affected = new Set();
+      if (old && old.invoiceId) affected.add(old.invoiceId);
+      if (data.invoiceId) affected.add(data.invoiceId);
+      await Promise.all(Array.from(affected).map((invoice) => syncInvoiceStatus(invoice)));
       closeModal($('#paymentModal'));
       toast(id ? 'Оплата обновлена' : 'Оплата добавлена', 'ok');
       renderAll();
@@ -1794,10 +2018,11 @@
   function confirmDeletePayment(id) {
     const p = state.payments.find((item) => item.id === id);
     if (!p) return;
+    const invoice = invoiceById(p.invoiceId);
     askConfirm({
       title: 'Удалить оплату?',
       text: 'Оплата <b>' + fmtMoney(p.amount) + '</b> — ' + esc(clientName(p.clientId)) + ', ' + fmtDate(p.date) +
-        '. Запись переместится в корзину.',
+        (invoice ? ' · счёт ' + esc(invoice.number) : '') + '. Запись переместится в корзину.',
       okLabel: 'Удалить',
       onOk: async () => {
         const entry = { id: uid(), type: 'payment', data: p, removedAt: new Date().toISOString() };
@@ -1806,6 +2031,7 @@
           await DB.remove('payments', id);
           state.payments = state.payments.filter((item) => item.id !== id);
           state.trash.push(entry);
+          await syncInvoiceStatus(p.invoiceId);
           renderAll();
           toast('Оплата в корзине', '', { label: 'Вернуть', onClick: () => restoreTrash(entry.id) });
         } catch (e) {
@@ -2049,15 +2275,17 @@
     });
   }
 
-  /* ==================== Счета ==================== */
-  function nextInvoiceNumber() {
+  /* ==================== Счета и акты ==================== */
+  function nextDocumentNumber(kind) {
     const year = new Date().getFullYear();
+    const prefix = kind === 'act' ? 'АКТ' : 'СЧ';
     let max = 0;
-    state.invoices.forEach((inv) => {
-      const m = /^СЧ-\d{4}-(\d+)$/.exec(str(inv.number));
+    state.invoices.forEach((doc) => {
+      if (invoiceKind(doc) !== kind) return;
+      const m = new RegExp('^' + prefix + '-\\d{4}-(\\d+)$').exec(str(doc.number));
       if (m) max = Math.max(max, Number(m[1]));
     });
-    return 'СЧ-' + year + '-' + String(max + 1).padStart(3, '0');
+    return prefix + '-' + year + '-' + String(max + 1).padStart(3, '0');
   }
 
   function invoiceLines(clientId, period) {
@@ -2069,32 +2297,47 @@
         const cat = categoryById(w.category);
         const project = projectById(w.projectId);
         const desc = [cat ? cat.label : '', project ? project.name : '', w.note || ''].filter(Boolean).join(' · ') || 'Работа';
-        lines.push({ date: w.date, desc, minutes: workMinutes(w), hours: round2(workHours(w)), amount: workAmount(w) });
+        const minutes = workBilledMinutes(w);
+        lines.push({ date: w.date, desc, minutes, hours: round2(minutes / 60), amount: workAmount(w) });
       });
     state.projects
       .filter((p) => p.clientId === clientId && p.type === 'fixed' && inPeriod(projectDate(p), period))
       .forEach((p) => {
         if (num(p.budget) > 0) {
-          lines.push({ date: projectDate(p), desc: 'Проект: ' + p.name, hours: 0, amount: round2(num(p.budget)) });
+          lines.push({ date: projectDate(p), desc: 'Проект: ' + p.name, minutes: 0, hours: 0, amount: round2(num(p.budget)) });
         }
       });
     return lines;
   }
 
+  function updateDocumentKindUI() {
+    const kind = $('#documentKind') ? ($('#documentKind').value === 'act' ? 'act' : 'invoice') : 'invoice';
+    const isAct = kind === 'act';
+    if ($('#invoiceModalTitle')) $('#invoiceModalTitle').textContent = isAct ? 'Новый акт' : 'Новый счёт';
+    if ($('#invoiceDateLabel')) $('#invoiceDateLabel').textContent = isAct ? 'Дата акта' : 'Дата счёта';
+    if ($('#invoiceMetaFields')) $('#invoiceMetaFields').hidden = isAct;
+    if ($('#invoiceNote')) $('#invoiceNote').placeholder = isAct ? 'Например, услуги за октябрь' : 'Например, оплата до 5 числа';
+    updateInvoicePreview();
+  }
+
   function updateInvoicePreview() {
     const clientId = $('#invoiceClient').value;
     const period = $('#invoicePeriod').value;
+    const kind = $('#documentKind') ? ($('#documentKind').value === 'act' ? 'act' : 'invoice') : 'invoice';
     const lines = clientId ? invoiceLines(clientId, period) : [];
     const total = round2(lines.reduce((sum, l) => sum + num(l.amount), 0));
-    if ($('#invoiceNumberPreview')) $('#invoiceNumberPreview').textContent = nextInvoiceNumber() + ' · ' + INVOICE_STATUS[$('#invoiceStatus').value];
+    if ($('#invoiceNumberPreview')) {
+      $('#invoiceNumberPreview').textContent = nextDocumentNumber(kind) + ' · ' +
+        (kind === 'act' ? 'Акт выполненных работ' : (INVOICE_STATUS[$('#invoiceStatus').value] || 'Черновик'));
+    }
     const box = $('#invoicePreview');
     if (!box) return;
     if (!clientId) {
-      box.innerHTML = '<span class="muted">Выберите клиента — покажем позиции счёта.</span>';
+      box.innerHTML = '<span class="muted">Выберите клиента — покажем позиции документа.</span>';
       return;
     }
     if (!lines.length) {
-      box.innerHTML = '<span class="muted">За выбранный период нет работ. Счёт будет пустым.</span>';
+      box.innerHTML = '<span class="muted">За выбранный период нет работ. Документ будет пустым.</span>';
       return;
     }
     box.innerHTML = '<div class="invoice-preview-head"><span>Позиций: ' + lines.length + '</span><b>' + fmtMoney(total) + '</b></div>' +
@@ -2104,11 +2347,12 @@
       '</div>';
   }
 
-  function openInvoice(clientId) {
+  function openDocument(kind, clientId) {
     if (!ensureClient()) return;
     const form = $('#invoiceForm');
     form.reset();
     clearFormErrors(form);
+    $('#documentKind').value = kind === 'act' ? 'act' : 'invoice';
     fillClientSelect($('#invoiceClient'), 'Выберите клиента', clientId || '');
     $('#invoicePeriod').value = 'month';
     $('#invoiceDate').value = todayISO();
@@ -2117,10 +2361,12 @@
     $('#invoiceDue').value = toISO(due);
     $('#invoiceStatus').value = 'draft';
     $('#invoiceNote').value = '';
-    $('#invoiceNumberPreview').textContent = nextInvoiceNumber();
-    updateInvoicePreview();
+    updateDocumentKindUI();
     openModal('invoiceModal', true);
   }
+
+  const openInvoice = (clientId) => openDocument('invoice', clientId);
+  const openAct = (clientId) => openDocument('act', clientId);
 
   async function saveInvoice(event) {
     event.preventDefault();
@@ -2129,22 +2375,25 @@
       setFieldError('invoiceClient', 'invoiceClientErr', 'Выберите клиента');
       return;
     }
+    const kind = $('#documentKind').value === 'act' ? 'act' : 'invoice';
+    const isAct = kind === 'act';
     const period = $('#invoicePeriod').value;
     const lines = invoiceLines(clientId, period);
     if (!lines.length) {
-      toast('За выбранный период нет работ для счёта', 'error');
+      toast(isAct ? 'За выбранный период нет работ для акта' : 'За выбранный период нет работ для счёта', 'error');
       return;
     }
     const total = round2(lines.reduce((sum, l) => sum + num(l.amount), 0));
     const now = new Date().toISOString();
     const data = {
       id: uid(),
-      number: nextInvoiceNumber(),
+      kind,
+      number: nextDocumentNumber(kind),
       clientId,
       date: $('#invoiceDate').value || todayISO(),
-      dueDate: $('#invoiceDue').value,
+      dueDate: isAct ? '' : $('#invoiceDue').value,
       period,
-      status: $('#invoiceStatus').value,
+      status: isAct ? 'draft' : $('#invoiceStatus').value,
       total,
       note: $('#invoiceNote').value.trim(),
       items: lines,
@@ -2156,24 +2405,28 @@
       state.invoices.push(data);
       closeModal($('#invoiceModal'));
       renderAll();
-      toast('Счёт ' + data.number + ' создан', 'ok');
-      setTimeout(() => printInvoice(data.id), 120);
+      toast((isAct ? 'Акт ' : 'Счёт ') + data.number + ' создан', 'ok');
+      setTimeout(() => printDocument(data.id), 120);
     } catch (e) {
       console.error(e);
-      toast('Не удалось создать счёт', 'error');
+      toast(isAct ? 'Не удалось создать акт' : 'Не удалось создать счёт', 'error');
     }
   }
 
   function invoiceHtml(invoice) {
     const client = clientById(invoice.clientId);
     const myName = state.myName || 'Фрил-Бух';
+    const paid = invoicePaidAmount(invoice);
+    const remaining = invoiceRemaining(invoice);
+    const status = INVOICE_STATUS[invoiceDisplayStatus(invoice)] || 'Черновик';
     const rows = (invoice.items || []).map((l) => (
       '<tr><td>' + fmtDate(l.date) + '</td><td>' + esc(l.desc) + '</td><td class="num">' +
         (l.minutes ? fmtHours(l.minutes / 60) : (l.hours ? fmtHours(l.hours) : '—')) + '</td><td class="num">' + fmtMoney(l.amount) + '</td></tr>'
     )).join('');
     return '<div class="invoice-print">' +
       '<div class="invoice-print-head"><div><h1>Счёт ' + esc(invoice.number) + '</h1>' +
-        '<p>от ' + fmtDate(invoice.date) + (invoice.dueDate ? ' · оплатить до ' + fmtDate(invoice.dueDate) : '') + '</p></div>' +
+        '<p>от ' + fmtDate(invoice.date) + (invoice.dueDate ? ' · оплатить до ' + fmtDate(invoice.dueDate) : '') +
+        ' · ' + esc(status) + '</p></div>' +
         '<div class="invoice-print-me"><strong>' + esc(myName) + '</strong>' +
           (state.myDetails ? '<p>' + esc(state.myDetails).replace(/\n/g, '<br>') + '</p>' : '') + '</div></div>' +
       '<div class="invoice-print-parties"><div><span>Исполнитель</span><b>' + esc(myName) + '</b></div>' +
@@ -2182,28 +2435,63 @@
       '<table class="invoice-table"><thead><tr><th>Дата</th><th>Описание</th><th class="num">Время</th><th class="num">Сумма</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table>' +
       '<div class="invoice-total"><span>Итого</span><b>' + fmtMoney(invoice.total) + '</b></div>' +
+      (paid > 0.005 ? '<div class="invoice-paid"><span>Оплачено</span><b>' + fmtMoney(paid) + '</b></div>' : '') +
+      (paid > 0.005 && remaining > 0.005 ? '<div class="invoice-due"><span>Остаток</span><b>' + fmtMoney(remaining) + '</b></div>' : '') +
       (invoice.note ? '<p class="invoice-note">' + esc(invoice.note) + '</p>' : '') +
       '<p class="invoice-foot">Счёт сформирован в «Фрил-Бух» · ' + fmtDate(invoice.date) + '</p>' +
     '</div>';
   }
 
-  function printInvoice(id) {
-    const invoice = state.invoices.find((i) => i.id === id);
-    if (!invoice) return;
+  function actHtml(act) {
+    const client = clientById(act.clientId);
+    const myName = state.myName || 'Фрил-Бух';
+    const rows = (act.items || []).map((l) => (
+      '<tr><td>' + fmtDate(l.date) + '</td><td>' + esc(l.desc) + '</td><td class="num">' +
+        (l.minutes ? fmtHours(l.minutes / 60) : (l.hours ? fmtHours(l.hours) : '—')) + '</td><td class="num">' + fmtMoney(l.amount) + '</td></tr>'
+    )).join('');
+    return '<div class="invoice-print act-print">' +
+      '<div class="invoice-print-head"><div><h1>Акт выполненных работ</h1>' +
+        '<p>№ ' + esc(act.number) + ' от ' + fmtDate(act.date) + '</p></div>' +
+        '<div class="invoice-print-me"><strong>' + esc(myName) + '</strong>' +
+          (state.myDetails ? '<p>' + esc(state.myDetails).replace(/\n/g, '<br>') + '</p>' : '') + '</div></div>' +
+      '<div class="invoice-print-parties"><div><span>Исполнитель</span><b>' + esc(myName) + '</b></div>' +
+        '<div><span>Заказчик</span><b>' + esc(client ? client.name : 'Клиент') + '</b>' +
+          (client && client.email ? '<p>' + esc(client.email) + '</p>' : '') + '</div></div>' +
+      '<p class="act-intro">Исполнитель выполнил, а заказчик принял следующие работы:</p>' +
+      '<table class="invoice-table"><thead><tr><th>Дата</th><th>Описание</th><th class="num">Время</th><th class="num">Сумма</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table>' +
+      '<div class="invoice-total"><span>Итого</span><b>' + fmtMoney(act.total) + '</b></div>' +
+      (act.note ? '<p class="invoice-note">' + esc(act.note) + '</p>' : '') +
+      '<div class="act-signatures">' +
+        '<div><span>Исполнитель</span><b>' + esc(myName) + '</b><i class="act-sign-line"></i><small>подпись</small></div>' +
+        '<div><span>Заказчик</span><b>' + esc(client ? client.name : 'Клиент') + '</b><i class="act-sign-line"></i><small>подпись</small></div>' +
+      '</div>' +
+      '<p class="invoice-foot">Акт сформирован в «Фрил-Бух» · ' + fmtDate(act.date) + '</p>' +
+    '</div>';
+  }
+
+  function printDocument(id) {
+    const doc = invoiceById(id);
+    if (!doc) return;
     const area = $('#printArea');
     if (!area) return;
-    area.innerHTML = invoiceHtml(invoice);
+    area.innerHTML = invoiceKind(doc) === 'act' ? actHtml(doc) : invoiceHtml(doc);
     setTimeout(() => {
       try { window.print(); } catch (e) { console.error(e); }
     }, 100);
   }
 
+  const printInvoice = (id) => printDocument(id);
+  const printAct = (id) => printDocument(id);
+
   function confirmDeleteInvoice(id) {
-    const inv = state.invoices.find((i) => i.id === id);
+    const inv = invoiceById(id);
     if (!inv) return;
+    const isAct = invoiceKind(inv) === 'act';
+    const label = isAct ? 'акт' : 'счёт';
     askConfirm({
-      title: 'Удалить счёт?',
-      text: 'Счёт <b>' + esc(inv.number) + '</b> на ' + fmtMoney(inv.total) + ' будет удалён. Работы и оплаты останутся.',
+      title: isAct ? 'Удалить акт?' : 'Удалить счёт?',
+      text: (isAct ? 'Акт ' : 'Счёт ') + '<b>' + esc(inv.number) + '</b> на ' + fmtMoney(inv.total) + ' будет удалён. Работы и оплаты останутся.',
       okLabel: 'Удалить',
       onOk: async () => {
         const entry = { id: uid(), type: 'invoice', data: inv, removedAt: new Date().toISOString() };
@@ -2213,10 +2501,10 @@
           state.invoices = state.invoices.filter((i) => i.id !== id);
           state.trash.push(entry);
           renderAll();
-          toast('Счёт в корзине', '', { label: 'Вернуть', onClick: () => restoreTrash(entry.id) });
+          toast((isAct ? 'Акт' : 'Счёт') + ' в корзине', '', { label: 'Вернуть', onClick: () => restoreTrash(entry.id) });
         } catch (e) {
           console.error(e);
-          toast('Не удалось удалить счёт', 'error');
+          toast('Не удалось удалить ' + label, 'error');
         }
       }
     });
@@ -2276,10 +2564,19 @@
     const client = clientById($('#weekClient') ? $('#weekClient').value : '');
     const rate = client ? num(client.rate) : 0;
     const rateUnit = clientRateUnit(client);
+    const billingStep = clientBillingStep(client);
+    const minBillMinutes = clientMinBillMinutes(client);
     let minutes = 0;
-    $$('[data-week-day]').forEach((input) => { minutes += inputToMinutes(input.value); });
+    let billed = 0;
+    $$('[data-week-day]').forEach((input) => {
+      const value = inputToMinutes(input.value);
+      minutes += value;
+      if (value > 0) billed += billableMinutes(value, billingStep, minBillMinutes);
+    });
     if ($('#weekPreview')) {
-      $('#weekPreview').textContent = fmtHours(minutes / 60) + ' · ' + fmtMoney(amountForMinutes(minutes, rate, rateUnit)) +
+      $('#weekPreview').textContent = fmtHours(minutes / 60) +
+        (billed !== minutes ? ' · к оплате ' + fmtHours(billed / 60) : '') +
+        ' · ' + fmtMoney(amountForMinutes(billed, rate, rateUnit)) +
         (rate > 0 ? ' · ' + fmtMoney(rate) + '/' + rateUnitShort(rateUnit) : '');
     }
   }
@@ -2294,6 +2591,8 @@
     const client = clientById(clientId);
     if (!client) return;
     const now = new Date().toISOString();
+    const billingStep = clientBillingStep(client);
+    const minBillMinutes = clientMinBillMinutes(client);
     const rows = [];
     $$('[data-week-day]').forEach((input) => {
       const minutes = Math.min(1440, inputToMinutes(input.value));
@@ -2304,6 +2603,9 @@
         date: input.dataset.date,
         minutes,
         hours: round2(minutes / 60),
+        billedMinutes: billableMinutes(minutes, billingStep, minBillMinutes),
+        billingStep,
+        minBillMinutes,
         rate: round2(num(client.rate)),
         rateUnit: clientRateUnit(client),
         start: '',
@@ -2513,6 +2815,7 @@
         }
         await DB.put('payments', item.data);
         upsertLocal('payments', item.data);
+        await syncInvoiceStatus(item.data.invoiceId);
       } else if (item.type === 'project') {
         if (!clientById(item.data.clientId)) {
           toast('Сначала восстановите клиента', 'error');
@@ -2629,7 +2932,7 @@
   function backupData() {
     const data = {
       app: 'fril-buh',
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
       clients: state.clients,
       projects: state.projects,
@@ -2660,7 +2963,7 @@
   function confirmClearAll() {
     askConfirm({
       title: 'Очистить все данные?',
-      text: 'Удалятся клиенты, проекты, работы, оплаты, расходы, счета и корзина. Настройки и PIN сохранятся. Это действие нельзя отменить — сначала лучше скачать бэкап.',
+      text: 'Удалятся клиенты, проекты, работы, оплаты, расходы, счета, акты и корзина. Настройки и PIN сохранятся. Это действие нельзя отменить — сначала лучше скачать бэкап.',
       okLabel: 'Удалить всё',
       onOk: async () => {
         const meta = {
@@ -2714,6 +3017,8 @@
         name: str(c.name).trim() || 'Без имени',
         rate: round2(num(c.rate)),
         rateUnit: c.rateUnit === 'minute' ? 'minute' : 'hour',
+        billingStep: BILLING_STEPS.includes(Number(c.billingStep)) ? Number(c.billingStep) : 0,
+        minBillMinutes: MIN_BILL_MINUTES.includes(Number(c.minBillMinutes)) ? Number(c.minBillMinutes) : 0,
         phone: str(c.phone),
         email: str(c.email),
         note: str(c.note),
@@ -2748,12 +3053,20 @@
       .filter((w) => w && typeof w === 'object' && clientIds.has(str(w.clientId)) && (num(w.minutes) > 0 || num(w.hours) > 0))
       .map((w) => {
         const minutes = Math.round(num(w.minutes) > 0 ? num(w.minutes) : num(w.hours) * 60);
+        const billingStep = BILLING_STEPS.includes(Number(w.billingStep)) ? Number(w.billingStep) : 0;
+        const minBillMinutes = MIN_BILL_MINUTES.includes(Number(w.minBillMinutes)) ? Number(w.minBillMinutes) : 0;
+        const billedMinutes = num(w.billedMinutes) > 0
+          ? Math.round(num(w.billedMinutes))
+          : billableMinutes(minutes, billingStep, minBillMinutes);
         return {
           id: str(w.id) || uid(),
           clientId: str(w.clientId),
           date: validISODate(w.date),
           minutes,
           hours: round2(minutes / 60),
+          billedMinutes,
+          billingStep,
+          minBillMinutes,
           rate: round2(num(w.rate)),
           rateUnit: w.rateUnit === 'minute' ? 'minute' : 'hour',
           start: str(w.start),
@@ -2776,6 +3089,7 @@
         date: validISODate(p.date),
         method: METHODS[str(p.method)] ? str(p.method) : 'other',
         projectId: projectIds.has(str(p.projectId)) ? str(p.projectId) : '',
+        invoiceId: str(p.invoiceId),
         note: str(p.note),
         createdAt: p.createdAt || now,
         updatedAt: p.updatedAt || now
@@ -2796,6 +3110,7 @@
     const invoices = arr(raw.invoices)
       .filter((i) => i && typeof i === 'object' && clientIds.has(str(i.clientId)))
       .map((i) => {
+        const kind = str(i.kind) === 'act' ? 'act' : 'invoice';
         const items = arr(i.items)
           .filter((line) => line && typeof line === 'object')
           .map((line) => {
@@ -2811,7 +3126,8 @@
         const total = round2(items.reduce((sum, line) => sum + num(line.amount), 0) || num(i.total));
         return {
           id: str(i.id) || uid(),
-          number: str(i.number) || 'СЧ',
+          kind,
+          number: str(i.number) || (kind === 'act' ? 'АКТ' : 'СЧ'),
           clientId: str(i.clientId),
           date: validISODate(i.date),
           dueDate: str(i.dueDate),
@@ -2824,6 +3140,14 @@
           updatedAt: i.updatedAt || now
         };
       });
+
+    const invoiceMap = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+    payments.forEach((payment) => {
+      const invoice = invoiceMap.get(payment.invoiceId);
+      if (!invoice || invoice.clientId !== payment.clientId || invoiceKind(invoice) !== 'invoice') {
+        payment.invoiceId = '';
+      }
+    });
 
     const trash = arr(raw.trash)
       .filter((t) => t && typeof t === 'object' && t.data)
@@ -2919,6 +3243,8 @@
     const pending = [];
     const clientIdMap = new Map();
     const projectIdMap = new Map();
+    const invoiceIdMap = new Map();
+    const newPaymentRows = [];
     const clientKey = (c) => str(c.name).trim().toLowerCase() + '|' + round2(num(c.rate)) + '|' + (c.rateUnit === 'minute' ? 'minute' : 'hour');
     const existingClients = new Map(state.clients.map((c) => [clientKey(c), c]));
 
@@ -2959,8 +3285,8 @@
     data.works.forEach((w) => {
       const clientId = clientIdMap.get(w.clientId) || w.clientId;
       if (!clientById(clientId)) return;
-      const signature = [clientId, w.date, workMinutes(w), round2(workRate(w)), workRateUnit(w), str(w.note), w.category || ''].join('|');
-      const exists = state.works.some((x) => [x.clientId, x.date, workMinutes(x), round2(workRate(x)), workRateUnit(x), str(x.note), x.category || ''].join('|') === signature);
+      const signature = [clientId, w.date, workMinutes(w), workBilledMinutes(w), round2(workRate(w)), workRateUnit(w), str(w.note), w.category || ''].join('|');
+      const exists = state.works.some((x) => [x.clientId, x.date, workMinutes(x), workBilledMinutes(x), round2(workRate(x)), workRateUnit(x), str(x.note), x.category || ''].join('|') === signature);
       if (exists) return;
       const row = Object.assign({}, w, {
         id: state.works.some((x) => x.id === w.id) ? uid() : w.id,
@@ -2981,9 +3307,11 @@
       const row = Object.assign({}, p, {
         id: state.payments.some((x) => x.id === p.id) ? uid() : p.id,
         clientId,
-        projectId: p.projectId ? (projectIdMap.get(p.projectId) || '') : ''
+        projectId: p.projectId ? (projectIdMap.get(p.projectId) || '') : '',
+        invoiceId: p.invoiceId || ''
       });
       state.payments.push(row);
+      newPaymentRows.push(row);
       pending.push(['payments', row]);
       added.payments += 1;
     });
@@ -3001,16 +3329,31 @@
     data.invoices.forEach((inv) => {
       const clientId = clientIdMap.get(inv.clientId) || inv.clientId;
       if (!clientById(clientId)) return;
-      const exists = state.invoices.some((x) => x.id === inv.id || x.number === inv.number);
-      if (exists) return;
+      const existing = state.invoices.find((x) => x.id === inv.id || x.number === inv.number);
+      if (existing) {
+        invoiceIdMap.set(inv.id, existing.id);
+        return;
+      }
       const row = Object.assign({}, inv, {
         id: state.invoices.some((x) => x.id === inv.id) ? uid() : inv.id,
         clientId
       });
       state.invoices.push(row);
+      invoiceIdMap.set(inv.id, row.id);
       pending.push(['invoices', row]);
       added.invoices += 1;
     });
+
+    newPaymentRows.forEach((payment) => {
+      if (!payment.invoiceId) return;
+      const invoiceId = invoiceIdMap.get(payment.invoiceId) || '';
+      const invoice = invoiceById(invoiceId);
+      payment.invoiceId = invoice && invoice.clientId === payment.clientId && invoiceKind(invoice) === 'invoice'
+        ? invoiceId : '';
+    });
+
+    const linkedInvoices = new Set(newPaymentRows.map((payment) => payment.invoiceId).filter(Boolean));
+    await Promise.all(Array.from(linkedInvoices).map((invoiceId) => syncInvoiceStatus(invoiceId)));
 
     data.trash.forEach((t) => {
       if (state.trash.some((x) => x.id === t.id)) return;
@@ -3065,7 +3408,8 @@
         row('Работы', d.works.length) +
         row('Оплаты', d.payments.length) +
         row('Расходы', d.expenses.length) +
-        row('Счета', d.invoices.length) +
+        row('Счета', d.invoices.filter((i) => invoiceKind(i) === 'invoice').length) +
+        row('Акты', d.invoices.filter((i) => invoiceKind(i) === 'act').length) +
       '</div>' +
       '<p class="hint">Сейчас в приложении: ' + state.clients.length + ' клиентов, ' + state.works.length + ' работ, ' +
         state.payments.length + ' оплат, ' + state.expenses.length + ' расходов.</p>';
@@ -3107,12 +3451,13 @@
   }
 
   function exportWorksCSV() {
-    const rows = [['Клиент', 'Дата', 'Часы', 'Минуты', 'Ставка', 'Ставка за', 'Сумма', 'Категория', 'Проект', 'Начало', 'Конец', 'Описание']];
+    const rows = [['Клиент', 'Дата', 'Часы', 'Минуты', 'К оплате, мин', 'Ставка', 'Ставка за', 'Сумма', 'Категория', 'Проект', 'Начало', 'Конец', 'Описание']];
     state.works.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach((w) => {
       const cat = categoryById(w.category);
       const project = projectById(w.projectId);
       rows.push([
-        clientName(w.clientId), w.date, csvNum(workHours(w)), workMinutes(w), csvNum(workRate(w)), rateUnitWord(workRateUnit(w)),
+        clientName(w.clientId), w.date, csvNum(workHours(w)), workMinutes(w), workBilledMinutes(w),
+        csvNum(workRate(w)), rateUnitWord(workRateUnit(w)),
         csvNum(workBilledAmount(w)), cat ? cat.label : '', project ? project.name : '', w.start || '', w.end || '', w.note || ''
       ]);
     });
@@ -3121,10 +3466,12 @@
   }
 
   function exportPaymentsCSV() {
-    const rows = [['Клиент', 'Дата', 'Сумма', 'Способ', 'Проект', 'Комментарий']];
+    const rows = [['Клиент', 'Дата', 'Сумма', 'Способ', 'Счёт', 'Проект', 'Комментарий']];
     state.payments.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach((p) => {
       const project = projectById(p.projectId);
-      rows.push([clientName(p.clientId), p.date, csvNum(p.amount), METHODS[p.method] || 'Другое', project ? project.name : '', p.note || '']);
+      const invoice = invoiceById(p.invoiceId);
+      rows.push([clientName(p.clientId), p.date, csvNum(p.amount), METHODS[p.method] || 'Другое',
+        invoice ? invoice.number : '', project ? project.name : '', p.note || '']);
     });
     downloadCSV('fril-buh-oplaty-' + todayISO() + '.csv', rows);
     toast('CSV с оплатами скачан', 'ok');
@@ -3387,8 +3734,18 @@
       case 'edit-project': openProject(id); break;
       case 'delete-project': confirmDeleteProject(id); break;
       case 'new-invoice': openInvoice(id); break;
+      case 'new-act': openAct(id); break;
       case 'print-invoice': printInvoice(id); break;
+      case 'print-act': printAct(id); break;
       case 'delete-invoice': confirmDeleteInvoice(id); break;
+      case 'pay-invoice': {
+        const invoice = invoiceById(id);
+        if (invoice) {
+          closeDetailIfOpen();
+          openPayment(null, invoice.clientId, invoice.id);
+        }
+        break;
+      }
       case 'week-fill': openWeek(); break;
       case 'timer-cancel': cancelTimer(); break;
       case 'timer-stop': stopTimer(); break;
@@ -3564,6 +3921,7 @@
     });
     $('#weekClient').addEventListener('change', renderWeek);
     $('#weekDays').addEventListener('input', updateWeekPreview);
+    $('#documentKind').addEventListener('change', updateDocumentKindUI);
     $('#invoiceClient').addEventListener('change', updateInvoicePreview);
     $('#invoicePeriod').addEventListener('change', updateInvoicePreview);
     $('#invoiceStatus').addEventListener('change', updateInvoicePreview);
@@ -3620,6 +3978,14 @@
     $('#workProject').addEventListener('change', updateWorkPreview);
     $('#paymentClient').addEventListener('change', (event) => {
       fillProjectSelect($('#paymentProject'), event.target.value, '', 'Без проекта');
+      fillInvoiceSelect($('#paymentInvoice'), event.target.value, '', 'Без счёта');
+    });
+    $('#paymentInvoice').addEventListener('change', () => {
+      updatePaymentInvoiceHint();
+      const invoice = invoiceById($('#paymentInvoice').value);
+      if (invoice && !$('#paymentAmount').value) {
+        $('#paymentAmount').value = String(invoiceRemaining(invoice));
+      }
     });
     $('#workHours').addEventListener('input', () => {
       markHourChips();

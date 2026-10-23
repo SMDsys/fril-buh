@@ -463,6 +463,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .row-meta { font-size: 12.5px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; line-height: 1.3; }
 .row-meta b { display: block; color: var(--ink); font-weight: 600; }
 .row-meta span { display: block; font-size: 11.5px; }
+.row-meta .row-billed { color: var(--accent); font-weight: 600; }
 .row-actions { display: flex; gap: 2px; grid-column: 2 / -1; justify-content: flex-end; }
 .work-row .row-actions, .money-row .row-actions { grid-row: 2; margin-top: 2px; }
 .work-row .row-main, .money-row .row-main { grid-row: 1 / span 1; }
@@ -843,8 +844,18 @@ button:disabled { opacity: 0.55; cursor: default; }
   .invoice-total { display: flex; align-items: baseline; justify-content: flex-end; gap: 18px; margin-top: 14px; padding-top: 12px; border-top: 2px solid #111; }
   .invoice-total span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #777; }
   .invoice-total b { font-size: 22px; }
+  .invoice-paid, .invoice-due { display: flex; align-items: baseline; justify-content: flex-end; gap: 18px; margin-top: 6px; }
+  .invoice-paid span, .invoice-due span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #777; }
+  .invoice-paid b { color: #0f766e; }
+  .invoice-due b { color: #a15c07; }
   .invoice-note { margin-top: 16px; padding: 10px 12px; background: #f4f4f4; border-radius: 6px; white-space: pre-wrap; }
   .invoice-foot { margin-top: 28px; color: #888; font-size: 10px; }
+  .act-intro { margin: 16px 0 4px; }
+  .act-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 38px; }
+  .act-signatures span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #777; }
+  .act-signatures b { display: block; margin-top: 2px; font-size: 13px; }
+  .act-sign-line { display: block; height: 30px; border-bottom: 1px solid #111; margin-top: 6px; }
+  .act-signatures small { display: block; margin-top: 3px; color: #888; font-size: 9px; }
 }
 
 /* ==================== Планшет / десктоп ==================== */

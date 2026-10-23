@@ -54,14 +54,31 @@ test('manifest.webmanifest корректен и ссылается на сущ�
 
 test('Версия приложения согласована', () => {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '2.1.0');
-  assert.match(read('js/app.js'), /const VERSION = '2\.1\.0';/);
-  assert.match(read('index.html'), /<span id="appVersion">2\.1\.0<\/span>/);
+  assert.equal(pkg.version, '2.2.0');
+  assert.match(read('js/app.js'), /const VERSION = '2\.2\.0';/);
+  assert.match(read('index.html'), /<span id="appVersion">2\.2\.0<\/span>/);
+});
+
+test('Правила оплаты, акты и связь оплат со счетами на месте', () => {
+  const html = read('index.html');
+  const app = read('js/app.js');
+  for (const id of [
+    'clientBillingStep', 'clientMinBillMinutes', 'documentKind',
+    'paymentInvoice', 'paymentInvoiceHint', 'invoiceMetaFields',
+    'invoiceDateLabel', 'invoiceSubmitBtn'
+  ]) {
+    assert.match(html, new RegExp('id="' + id + '"'), 'нет поля ' + id);
+  }
+  assert.match(app, /const BILLING_STEPS = \[0, 5, 10, 15, 30, 60\];/);
+  assert.match(app, /const MIN_BILL_MINUTES = \[0, 15, 30, 45, 60, 90, 120\];/);
+  assert.match(app, /=== 'act' \? 'act' : 'invoice'/);
+  assert.match(app, /invoiceId: linkedInvoice \? linkedInvoice\.id : ''/);
+  assert.match(app, /partial: 'Частично оплачен'/);
 });
 
 test('Service worker кэширует актуальные файлы', () => {
   const sw = read('sw.js');
-  assert.match(sw, /const CACHE = 'frilbuh-v5';/);
+  assert.match(sw, /const CACHE = 'frilbuh-v6';/);
   const assets = [...sw.matchAll(/'\.\/([^']*)'/g)].map((m) => m[1]).filter(Boolean);
   for (const asset of assets) assert.ok(exists(asset), 'нет файла в кэше: ' + asset);
 });

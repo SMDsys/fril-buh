@@ -372,6 +372,31 @@
       </div>
       <div class="grid-2">
         <label class="field">
+          <span>Округление оплаты</span>
+          <select class="input" id="clientBillingStep">
+            <option value="0">Без округления</option>
+            <option value="5">Вверх до 5 мин</option>
+            <option value="10">Вверх до 10 мин</option>
+            <option value="15">Вверх до 15 мин</option>
+            <option value="30">Вверх до 30 мин</option>
+            <option value="60">Вверх до 60 мин</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Минимум к оплате</span>
+          <select class="input" id="clientMinBillMinutes">
+            <option value="0">Без минимума</option>
+            <option value="15">15 минут</option>
+            <option value="30">30 минут</option>
+            <option value="45">45 минут</option>
+            <option value="60">1 час</option>
+            <option value="90">1,5 часа</option>
+            <option value="120">2 часа</option>
+          </select>
+        </label>
+      </div>
+      <div class="grid-2">
+        <label class="field">
           <span>Телефон</span>
           <input class="input" id="clientPhone" type="tel" autocomplete="off" placeholder="+7 900 000-00-00" />
         </label>
@@ -381,7 +406,7 @@
           <em class="err" id="clientEmailErr" hidden>Проверьте адрес</em>
         </label>
       </div>
-      <p class="hint">Фиксированная оплата задаётся в проекте клиента.</p>
+      <p class="hint">Округление и минимум применяются к новым работам. Старые записи не меняются. Фиксированная оплата задаётся в проекте клиента.</p>
       <label class="field">
         <span>Заметка</span>
         <textarea class="input" id="clientNote" rows="3" placeholder="Договорённости, особенности, реквизиты"></textarea>
@@ -498,6 +523,13 @@
         <select class="input" id="paymentProject">
           <option value="">Без проекта</option>
         </select>
+      </label>
+      <label class="field" id="paymentInvoiceField" hidden>
+        <span>Счёт</span>
+        <select class="input" id="paymentInvoice">
+          <option value="">Без счёта</option>
+        </select>
+        <em class="hint hint-tight" id="paymentInvoiceHint" hidden></em>
       </label>
       <div class="grid-2">
         <label class="field">
@@ -708,6 +740,13 @@
     </div>
     <form id="invoiceForm" novalidate>
       <label class="field">
+        <span>Документ</span>
+        <select class="input" id="documentKind">
+          <option value="invoice">Счёт на оплату</option>
+          <option value="act">Акт выполненных работ</option>
+        </select>
+      </label>
+      <label class="field">
         <span>Клиент *</span>
         <select class="input" id="invoiceClient">
           <option value="">Выберите клиента</option>
@@ -724,11 +763,11 @@
           </select>
         </label>
         <label class="field">
-          <span>Дата счёта</span>
+          <span id="invoiceDateLabel">Дата счёта</span>
           <input class="input" id="invoiceDate" type="date" />
         </label>
       </div>
-      <div class="grid-2">
+      <div class="grid-2" id="invoiceMetaFields">
         <label class="field">
           <span>Срок оплаты</span>
           <input class="input" id="invoiceDue" type="date" />
@@ -749,7 +788,7 @@
       <div class="invoice-preview" id="invoicePreview"></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" type="button" data-close>Отмена</button>
-        <button class="btn btn-primary" type="submit">Создать и печатать</button>
+        <button class="btn btn-primary" type="submit" id="invoiceSubmitBtn">Создать и печатать</button>
       </div>
     </form>
   </div>
@@ -914,10 +953,10 @@
     <section class="settings-block danger-zone">
       <h4>Опасная зона</h4>
       <button class="btn btn-sm btn-danger" type="button" data-action="clear-all">Очистить все данные</button>
-      <p class="hint">Удаляет клиентов, работы, оплаты и корзину без возможности восстановления.</p>
+      <p class="hint">Удаляет клиентов, проекты, работы, оплаты, расходы, счета, акты и корзину без возможности восстановления.</p>
     </section>
 
-    <p class="about">Фрил-Бух · версия <span id="appVersion">2.1.0</span> · данные на устройстве</p>
+    <p class="about">Фрил-Бух · версия <span id="appVersion">2.2.0</span> · данные на устройстве</p>
   </div>
 </div>
 
